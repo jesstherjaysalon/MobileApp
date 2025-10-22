@@ -11,6 +11,7 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  Modal,
 } from "react-native";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import Geolocation from "@react-native-community/geolocation";
@@ -19,6 +20,8 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { getUser, removeUser, removeToken } from "../storageUtils";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import dayjs from "dayjs";
+import api from "../api";
 
 const HomePage = () => {
   const [user, setUser] = useState(null);
@@ -27,19 +30,111 @@ const HomePage = () => {
   const [watchId, setWatchId] = useState(null);
   const [gpsStatus, setGpsStatus] = useState(false);
   const [networkStatus, setNetworkStatus] = useState(false);
+  const [missedSegments, setMissedSegments] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [expandedGroup, setExpandedGroup] = useState(null);
+  const [selectedSegments, setSelectedSegments] = useState([]);
   const navigation = useNavigation();
   const mapRef = useRef(null);
 
-  // ✅ Load user data when screen is focused
+  // ✅ Load user and missed segments when screen is focused
   useFocusEffect(
     useCallback(() => {
-      const loadUser = async () => {
+      const loadUserAndSegments = async () => {
         const userData = await getUser();
-        if (userData) setUser(userData);
+        if (userData) {
+          setUser(userData);
+          fetchMissedSegments(userData.id);
+        }
       };
-      loadUser();
+      loadUserAndSegments();
     }, [])
   );
+
+  // ✅ Fetch missed segments
+  const fetchMissedSegments = async (userId) => {
+    try {
+      const res = await api.get(`/missed-segments?user_id=${userId}`);
+      const data = res.data;
+      setMissedSegments(data.segments || []);
+      setUnreadCount(data.count || 0);
+    } catch (error) {
+      console.log("Failed to load missed segments:", error.message);
+      setMissedSegments([]);
+      setUnreadCount(0);
+    }
+  };
+
+  // ✅ Group segments by schedule_id
+  const groupSegmentsBySchedule = (segments) => {
+    const grouped = {};
+    segments.forEach((seg) => {
+      const key = seg.schedule_id;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(seg);
+    });
+    return grouped;
+  };
+  const groupedSegments = groupSegmentsBySchedule(missedSegments);
+
+  // ✅ Select segment toggle
+  const toggleSegmentSelection = (segmentId) => {
+    setSelectedSegments((prev) =>
+      prev.includes(segmentId)
+        ? prev.filter((id) => id !== segmentId)
+        : [...prev, segmentId]
+    );
+  };
+
+  // ✅ Retrieve selected segments with confirmation
+const handleRetrieveSelected = async () => {
+  if (selectedSegments.length === 0) {
+    Alert.alert("No Selection", "Please select at least one segment.");
+    return;
+  }
+
+  Alert.alert(
+    "Confirm Retrieval",
+    `Are you sure you want to retrieve ${selectedSegments.length} missed segment(s)?`,
+    [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Confirm",
+        style: "default",
+        onPress: async () => {
+          try {
+            console.log("Retrieving segments:", selectedSegments);
+
+            // ✅ You no longer need to send truck_id
+            await api.post("/retrieve-segments", {
+              leg_ids: selectedSegments,
+            });
+
+            Alert.alert(
+              "Success",
+              "Selected missed segments retrieved successfully."
+            );
+            setSelectedSegments([]);
+            setModalVisible(false);
+            await fetchMissedSegments(user?.id);
+          } catch (err) {
+            console.log("Retrieve error:", err.response?.data || err.message);
+            Alert.alert(
+              "Error",
+              err.response?.data?.error ||
+                "Failed to retrieve selected segments."
+            );
+          }
+        },
+      },
+    ]
+  );
+};
+
 
   // ✅ GPS & Network Watchers
   useEffect(() => {
@@ -47,14 +142,12 @@ const HomePage = () => {
     const unsubscribe = NetInfo.addEventListener((state) => {
       setNetworkStatus(state.isConnected && state.isInternetReachable);
     });
-
     return () => {
       if (watchId !== null) Geolocation.clearWatch(watchId);
       unsubscribe();
     };
   }, []);
 
-  // ✅ Request Location Permission
   const requestLocationPermission = async () => {
     if (Platform.OS === "android") {
       try {
@@ -62,7 +155,6 @@ const HomePage = () => {
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
         ]);
-
         if (
           granted["android.permission.ACCESS_FINE_LOCATION"] ===
           PermissionsAndroid.RESULTS.GRANTED
@@ -82,7 +174,6 @@ const HomePage = () => {
     }
   };
 
-  // ✅ Get Current Location and Start Watching
   const getInitialLocationThenWatch = () => {
     Geolocation.getCurrentPosition(
       (pos) => {
@@ -103,7 +194,6 @@ const HomePage = () => {
     );
   };
 
-  // ✅ Continuous Location Updates
   const startWatchingLocation = () => {
     const id = Geolocation.watchPosition(
       (pos) => {
@@ -113,46 +203,51 @@ const HomePage = () => {
         });
         setGpsStatus(true);
       },
-      (err) => {
-        setGpsStatus(false);
-      },
-      {
-        enableHighAccuracy: true,
-        distanceFilter: 1,
-        interval: 5000,
-        fastestInterval: 2000,
-      }
+      () => setGpsStatus(false),
+      { enableHighAccuracy: true, distanceFilter: 1, interval: 5000, fastestInterval: 2000 }
     );
     setWatchId(id);
   };
 
-  // ✅ Logout Function
   const handleLogout = async () => {
     await removeUser();
     await removeToken();
     navigation.replace("Login");
   };
 
+  const handleNotificationPress = async () => {
+    setModalVisible(true);
+    setUnreadCount(0);
+    await fetchMissedSegments(user?.id);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.headerContainer}>
-          <View style={styles.headerBar}>
-            <MaterialIcons name="dashboard" size={30} color="#fff" />
-            <Text style={styles.headerTitle}>Driver Dashboard</Text>
+          <View style={styles.headerTop}>
+            <View style={styles.headerBar}>
+              <MaterialIcons name="dashboard" size={30} color="#fff" />
+              <Text style={styles.headerTitle}>Driver Dashboard</Text>
+            </View>
+
+            <TouchableOpacity style={styles.notificationButton} onPress={handleNotificationPress}>
+              <MaterialIcons name="notifications" size={28} color="#fff" />
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{unreadCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
           <Text style={styles.headerSubtitle}>
-            Stay connected, monitor your live location, and manage your route
-            assignments efficiently.
+            Stay connected, monitor your live location, and manage your route assignments efficiently.
           </Text>
         </View>
 
-        {/* Live Map Section */}
+        {/* Map */}
         <View style={styles.mapContainer}>
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -171,7 +266,6 @@ const HomePage = () => {
                 longitudeDelta: 0.01,
               }}
             >
-              {/* ✅ Marker */}
               <Marker coordinate={location}>
                 <View style={styles.markerContainer}>
                   <View style={styles.pinMarker} />
@@ -192,17 +286,13 @@ const HomePage = () => {
 
         {/* Main Card */}
         <View style={styles.mainCard}>
-          <Text style={styles.heading}>You’re Online, Driver! 🚛</Text>
-          <Text style={styles.subText}>
-            Keep your GPS active to ensure smooth and accurate schedule tracking.
-          </Text>
-
+          <Text style={styles.heading}>You’re Online, Driver!</Text>
+          <Text style={styles.subText}>Keep your GPS active for accurate schedule tracking.</Text>
           {user && (
             <Text style={styles.welcome}>
               Welcome back, <Text style={styles.username}>{user.name}</Text>
             </Text>
           )}
-
           <View style={styles.statusBadge}>
             <MaterialIcons name="check-circle" size={20} color="#fff" />
             <Text style={styles.statusText}>Online</Text>
@@ -218,7 +308,7 @@ const HomePage = () => {
           )}
         </View>
 
-        {/* ✅ System Status (Now Functional) */}
+        {/* System Status */}
         <View style={styles.statusContainer}>
           <Text style={styles.statusHeader}>System Status</Text>
           <View style={styles.statusRow}>
@@ -228,16 +318,10 @@ const HomePage = () => {
                 size={28}
                 color={gpsStatus ? "#27AE60" : "#e74c3c"}
               />
-              <Text
-                style={[
-                  styles.statusLabel,
-                  { color: gpsStatus ? "#27AE60" : "#e74c3c" },
-                ]}
-              >
+              <Text style={[styles.statusLabel, { color: gpsStatus ? "#27AE60" : "#e74c3c" }]}>
                 GPS {gpsStatus ? "Active" : "Inactive"}
               </Text>
             </View>
-
             <View style={styles.statusItem}>
               <MaterialIcons
                 name="signal-cellular-alt"
@@ -245,10 +329,7 @@ const HomePage = () => {
                 color={networkStatus ? "#27AE60" : "#e74c3c"}
               />
               <Text
-                style={[
-                  styles.statusLabel,
-                  { color: networkStatus ? "#27AE60" : "#e74c3c" },
-                ]}
+                style={[styles.statusLabel, { color: networkStatus ? "#27AE60" : "#e74c3c" }]}
               >
                 Network {networkStatus ? "Stable" : "Disconnected"}
               </Text>
@@ -256,12 +337,134 @@ const HomePage = () => {
           </View>
         </View>
 
-        {/* Logout Button */}
+        {/* Logout */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <MaterialIcons name="logout" size={22} color="#fff" />
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* 🔔 Modal for Missed Segments */}
+      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <MaterialIcons name="error-outline" size={22} color="#e53935" />
+              <Text style={styles.modalTitle}>Missed Segments</Text>
+            </View>
+
+            {Object.keys(groupedSegments).length > 0 ? (
+              <ScrollView style={{ maxHeight: 420 }}>
+                {Object.entries(groupedSegments).map(([scheduleId, segments]) => {
+                  const firstSeg = segments[0];
+                  const pickupDate = firstSeg.schedule?.pickup_datetime
+                    ? dayjs(firstSeg.schedule.pickup_datetime).format("MMMM D, YYYY h:mm A")
+                    : "Unknown Date";
+
+                  const barangay = firstSeg.schedule?.barangay?.name || "Unknown Barangay";
+                  const driver = firstSeg.schedule?.driver?.user?.name || "Unassigned Driver";
+
+                  return (
+                    <View key={scheduleId} style={styles.groupBox}>
+                      <TouchableOpacity
+                        style={styles.groupHeader}
+                        onPress={() =>
+                          setExpandedGroup(expandedGroup === scheduleId ? null : scheduleId)
+                        }
+                      >
+                        <MaterialIcons
+                          name={expandedGroup === scheduleId ? "expand-less" : "expand-more"}
+                          size={22}
+                          color="#2e7d32"
+                        />
+                        <Text style={styles.groupHeaderText}>
+                          Schedule on {pickupDate}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <View style={{ marginLeft: 28, marginBottom: 8 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 3 }}>
+                          <MaterialIcons name="location-city" size={18} color="#1b5e20" />
+                          <Text style={{ fontSize: 13, color: "#333", marginLeft: 6 }}>
+                            <Text style={{ fontWeight: "600" }}>Barangay:</Text> {barangay}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <MaterialIcons name="person" size={18} color="#1b5e20" />
+                          <Text style={{ fontSize: 13, color: "#333", marginLeft: 6 }}>
+                            <Text style={{ fontWeight: "600" }}>Driver:</Text> {driver}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {expandedGroup === scheduleId &&
+                        segments.map((item) => (
+                          <TouchableOpacity
+                            key={item.id}
+                            style={[
+                              styles.missedItem,
+                              selectedSegments.includes(item.id) && {
+                                backgroundColor: "#E8F5E9",
+                                borderColor: "#27AE60",
+                              },
+                            ]}
+                            onPress={() => toggleSegmentSelection(item.id)}
+                          >
+                            <MaterialIcons
+                              name={
+                                selectedSegments.includes(item.id)
+                                  ? "check-box"
+                                  : "check-box-outline-blank"
+                              }
+                              color={
+                                selectedSegments.includes(item.id)
+                                  ? "#27AE60"
+                                  : "#aaa"
+                              }
+                              size={22}
+                            />
+                            <Text style={styles.missedText}>
+                              {`${item.from_zone?.name || ""}${item.from_terminal
+                                ? ": " + item.from_terminal.name
+                                : ""
+                                } ➜ ${item.to_zone?.name || ""}${item.to_terminal
+                                  ? ": " + item.to_terminal.name
+                                  : ""
+                                }`}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="check-circle" size={48} color="#2e7d32" />
+                <Text style={styles.noMissed}>No missed segments found.</Text>
+              </View>
+            )}
+
+            {selectedSegments.length > 0 && (
+              <TouchableOpacity
+                style={[styles.closeButton, { backgroundColor: "#27AE60" }]}
+                onPress={handleRetrieveSelected}
+              >
+                <Text style={styles.closeText}>
+                  Retrieve Selected ({selectedSegments.length})
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[styles.closeButton, { marginTop: 10 }]}
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={styles.closeText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -269,34 +472,30 @@ const HomePage = () => {
 export default HomePage;
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#f0f9f4",
-  },
-  scrollContent: {
-    flexGrow: 1,
-    padding: 20,
-  },
+  safeArea: { flex: 1, backgroundColor: "#f0f9f4" },
+  scrollContent: { flexGrow: 1, padding: 20 },
   headerContainer: {
     backgroundColor: "#2e7d32",
     borderRadius: 20,
     padding: 22,
     marginBottom: 18,
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  headerBar: {
-    flexDirection: "row",
+  headerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  headerBar: { flexDirection: "row", alignItems: "center", gap: 10 },
+  notificationButton: { position: "relative", padding: 5 },
+  badge: {
+    position: "absolute",
+    right: 2,
+    top: 2,
+    backgroundColor: "#e53935",
+    borderRadius: 10,
+    width: 18,
+    height: 18,
     alignItems: "center",
-    gap: 10,
+    justifyContent: "center",
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#fff",
-  },
+  badgeText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: "#fff" },
   headerSubtitle: {
     fontSize: 14,
     color: "rgba(255,255,255,0.9)",
@@ -308,17 +507,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
     marginBottom: 25,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  map: {
-    flex: 1,
-  },
-  markerContainer: {
-    alignItems: "center",
-  },
+  map: { flex: 1 },
+  markerContainer: { alignItems: "center" },
   pinMarker: {
     width: 10,
     height: 10,
@@ -326,26 +517,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#e74c3c",
     marginBottom: 4,
   },
-  truckImage: {
-    width: 45,
-    height: 45,
-  },
+  truckImage: { width: 45, height: 45 },
   mainCard: {
     backgroundColor: "#fff",
     borderRadius: 18,
     padding: 20,
     alignItems: "center",
     marginBottom: 25,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
   },
-  heading: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#14532d",
-  },
+  heading: { fontSize: 22, fontWeight: "800", color: "#14532d" },
   subText: {
     fontSize: 15,
     color: "#388e3c",
@@ -354,16 +534,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     lineHeight: 22,
   },
-  welcome: {
-    fontSize: 16,
-    color: "#2C3E50",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  username: {
-    fontWeight: "700",
-    color: "#1b5e20",
-  },
+  welcome: { fontSize: 16, color: "#2C3E50", textAlign: "center", marginBottom: 8 },
+  username: { fontWeight: "700", color: "#1b5e20" },
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -373,12 +545,7 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     marginBottom: 12,
   },
-  statusText: {
-    color: "#fff",
-    fontWeight: "600",
-    marginLeft: 6,
-    fontSize: 14,
-  },
+  statusText: { color: "#fff", fontWeight: "600", marginLeft: 6, fontSize: 14 },
   locationCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -387,53 +554,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 8,
   },
-  locationText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1b5e20",
-    marginLeft: 8,
-  },
-  fetching: {
-    fontSize: 14,
-    color: "#7f8c8d",
-    marginTop: 10,
-    textAlign: "center",
-  },
-  loadingContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    height: 250,
-  },
-
-  // ✅ Functional System Status
+  locationText: { fontSize: 16, fontWeight: "600", color: "#1b5e20", marginLeft: 8 },
+  fetching: { fontSize: 14, color: "#7f8c8d", marginTop: 10, textAlign: "center" },
+  loadingContainer: { alignItems: "center", justifyContent: "center", height: 250 },
   statusContainer: {
     backgroundColor: "#fff",
     borderRadius: 16,
     padding: 18,
     marginBottom: 25,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    elevation: 2,
   },
-  statusHeader: {
-    fontWeight: "700",
-    fontSize: 16,
-    marginBottom: 10,
-    color: "#1b5e20",
-  },
-  statusRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-  },
-  statusItem: {
-    alignItems: "center",
-  },
-  statusLabel: {
-    marginTop: 4,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
+  statusHeader: { fontWeight: "700", fontSize: 16, marginBottom: 10, color: "#1b5e20" },
+  statusRow: { flexDirection: "row", justifyContent: "space-around" },
+  statusItem: { alignItems: "center" },
+  statusLabel: { marginTop: 4, fontSize: 13, fontWeight: "600" },
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -441,16 +574,105 @@ const styles = StyleSheet.create({
     backgroundColor: "#e53935",
     paddingVertical: 14,
     borderRadius: 30,
-    shadowColor: "#e53935",
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 4,
     marginBottom: 40,
   },
-  logoutText: {
+  logoutText: { color: "#fff", fontWeight: "700", fontSize: 16, marginLeft: 8 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 18,
+  },
+  modalBox: {
+    backgroundColor: "#ffffff",
+    width: "100%",
+    borderRadius: 18,
+    padding: 20,
+    maxHeight: "80%",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+    paddingBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1b5e20",
+    marginLeft: 8,
+  },
+  groupBox: {
+    backgroundColor: "#f8fdf8",
+    borderRadius: 12,
+    marginBottom: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  groupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    flexWrap: "wrap",
+  },
+  groupHeaderText: {
+    flexShrink: 1,
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#14532d",
+    lineHeight: 20,
+  },
+  missedItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#fff5f5",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#ffe0e0",
+  },
+  missedText: {
+    flex: 1,
+    flexWrap: "wrap",
+    fontSize: 14,
+    color: "#c62828",
+    lineHeight: 20,
+    marginLeft: 8,
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+  },
+  noMissed: {
+    fontSize: 16,
+    color: "#1b5e20",
+    marginTop: 12,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  closeButton: {
+    backgroundColor: "#27AE60",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 16,
+  },
+  closeText: {
     color: "#fff",
     fontWeight: "700",
     fontSize: 16,
-    marginLeft: 8,
   },
 });

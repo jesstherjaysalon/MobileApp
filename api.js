@@ -3,7 +3,8 @@ import { getToken } from "./storageUtils";
 
 
 const api = axios.create({
-    baseURL: "http://192.168.254.119:8000/api",
+    baseURL: "http://192.168.254.147:8000/api",
+  //  baseURL: "https://menro.opol.site/api",
     headers: {"Content-Type": "application/json"},
 });
 

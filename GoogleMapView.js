@@ -1,15 +1,6 @@
-// GoogleMapView.js
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
-import {
-  StyleSheet,
-  View,
-  StatusBar,
-  Text,
-  Animated,
-  Easing,
-  Platform,
-} from "react-native";
+import { StyleSheet, View, StatusBar, Text, Platform } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 
 // ✅ Directions Service
@@ -76,13 +67,11 @@ const isValidCoord = (c) =>
   Math.abs(c.longitude) <= 180;
 
 /**
- * GoogleMapView — Final Merged Version
- *
- * Features:
- * ✅ Always-visible labels for each segment marker
- * ✅ Automatic map focus when navigating from toggle modal
- * ✅ Pulse animation for active segment
- * ✅ Safe fit/animate fallbacks for all platforms
+ * ✅ GoogleMapView (Final)
+ * - No polyline
+ * - Always visible labels
+ * - Colored markers by status
+ * - Focuses on selected segment from modal
  */
 export default function GoogleMapView({
   segments = [],
@@ -92,14 +81,13 @@ export default function GoogleMapView({
 }) {
   const mapRef = useRef(null);
   const [routes, setRoutes] = useState([]);
-  const pulseAnim = useRef(new Animated.Value(0)).current;
   const [overrideActiveIndex, setOverrideActiveIndex] = useState(null);
 
+  // Determine latest active segment by start_time
   const activeSegmentIndex = useMemo(() => {
     if (!segments || !segments.length) return null;
     let latestIndex = null;
     let latestTime = null;
-
     segments.forEach((seg, i) => {
       if (seg && seg.start_time) {
         const t = Date.parse(seg.start_time);
@@ -113,36 +101,11 @@ export default function GoogleMapView({
   }, [segments]);
 
   const resolvedActiveIndex =
-    overrideActiveIndex ??
-    (focusedIndex ?? activeSegmentIndex ?? currentIndex ?? null);
+    overrideActiveIndex ?? (focusedIndex ?? activeSegmentIndex ?? currentIndex ?? null);
 
+  // Fetch routes to validate coordinates (no polyline drawing)
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 900,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 0,
-          duration: 900,
-          easing: Easing.in(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, [pulseAnim]);
-
-  useEffect(() => {
-    if (typeof focusedIndex === "number" && focusedIndex >= 0) {
-      setOverrideActiveIndex(focusedIndex);
-    }
-  }, [focusedIndex]);
-
-  useEffect(() => {
-    if (!segments || !segments.length) {
+    if (!segments?.length) {
       setRoutes([]);
       return;
     }
@@ -162,12 +125,11 @@ export default function GoogleMapView({
             };
 
             if (!isValidCoord(from) || !isValidCoord(to)) {
-              console.warn(`[GoogleMapView] skipping segment ${idx} — invalid coords`, seg);
+              console.warn(`[GoogleMapView] skipping invalid segment ${idx}`);
               return null;
             }
 
-            const coords = await getRouteCoordinates(from, to);
-            return { from, to, coords };
+            return { from, to };
           })
         );
 
@@ -184,14 +146,14 @@ export default function GoogleMapView({
     };
   }, [segments]);
 
+  // Focus map when segment changes or modal click triggers
   useFocusEffect(
     useCallback(() => {
       const idxToUse = resolvedActiveIndex ?? 0;
       const active = routes[idxToUse];
       if (!mapRef.current || !active) return;
 
-      const coordsToFit =
-        active.coords && active.coords.length > 1 ? active.coords : [active.from, active.to];
+      const coordsToFit = [active.from, active.to];
 
       try {
         mapRef.current.fitToCoordinates(coordsToFit, {
@@ -205,33 +167,10 @@ export default function GoogleMapView({
   );
 
   useEffect(() => {
-    if (typeof focusedIndex !== "number" || !routes.length || !mapRef.current) return;
-    const r = routes[focusedIndex];
-    if (!r) return;
-
-    const coordsToFit = r.coords && r.coords.length > 1 ? r.coords : [r.from, r.to];
-    try {
-      mapRef.current.fitToCoordinates(coordsToFit, {
-        edgePadding: { top: 100, right: 100, bottom: 100, left: 100 },
-        animated: true,
-      });
-    } catch (err) {
-      try {
-        const region = {
-          latitude: coordsToFit[0].latitude,
-          longitude: coordsToFit[0].longitude,
-          latitudeDelta: 0.02,
-          longitudeDelta: 0.02,
-        };
-        if (Platform.OS === "android" && mapRef.current.animateToRegion) {
-          mapRef.current.animateToRegion(region, 500);
-        } else if (mapRef.current.animateCamera) {
-          mapRef.current.animateCamera({ center: region, zoom: 15 }, { duration: 500 });
-        }
-      } catch (e) {}
-      console.warn("[GoogleMapView] safeFitToRoute fallback:", err);
+    if (typeof focusedIndex === "number" && focusedIndex >= 0) {
+      setOverrideActiveIndex(focusedIndex);
     }
-  }, [focusedIndex, routes]);
+  }, [focusedIndex]);
 
   const safeFitToRoute = (coords) => {
     if (!mapRef.current || !Array.isArray(coords) || !coords.length) return;
@@ -256,25 +195,6 @@ export default function GoogleMapView({
       } catch (e) {}
       console.warn("[GoogleMapView] safeFitToRoute failed:", err);
     }
-  };
-
-  const PulsingMarker = ({ coordinate, onPress }) => {
-    const scale = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] });
-    const opacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.12] });
-
-    return (
-      <Marker coordinate={coordinate} tracksViewChanges={false} onPress={onPress}>
-        <View style={styles.markerWrapper}>
-          <Animated.View
-            style={[
-              styles.pulseCircle,
-              { transform: [{ scale }], opacity },
-            ]}
-          />
-          <View style={styles.pulseDot} />
-        </View>
-      </Marker>
-    );
   };
 
   return (
@@ -305,20 +225,22 @@ export default function GoogleMapView({
             const status = (seg.status || "pending").toLowerCase();
             const isActive = idx === resolvedActiveIndex;
 
-            let pinColor = "#007BFF";
-            if (isActive) pinColor = "#f97316";
-            else if (status === "completed") pinColor = "green";
+            // ✅ Marker colors based on status
+            let pinColor = "#007BFF"; // pending (blue)
+            if (status === "completed") pinColor = "green";
             else if (status === "missed") pinColor = "red";
+            else if (isActive) pinColor = "orange";
 
             return (
               <React.Fragment key={`seg-${idx}`}>
-                {/* ✅ Always visible start marker label */}
+                {/* Start Marker */}
                 <Marker
                   coordinate={r.from}
+                  pinColor={pinColor}
                   onPress={() => {
                     setOverrideActiveIndex(idx);
                     onMarkerPress(seg, idx);
-                    safeFitToRoute(r.coords || [r.from, r.to]);
+                    safeFitToRoute([r.from, r.to]);
                   }}
                 >
                   <View style={styles.markerContainer}>
@@ -329,13 +251,14 @@ export default function GoogleMapView({
                   </View>
                 </Marker>
 
-                {/* ✅ Always visible end marker label */}
+                {/* End Marker */}
                 <Marker
                   coordinate={r.to}
+                  pinColor={pinColor}
                   onPress={() => {
                     setOverrideActiveIndex(idx);
                     onMarkerPress(seg, idx);
-                    safeFitToRoute(r.coords || [r.from, r.to]);
+                    safeFitToRoute([r.from, r.to]);
                   }}
                 >
                   <View style={styles.markerContainer}>
@@ -373,7 +296,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   labelWrapper: {
-    backgroundColor: "rgba(255,255,255,0.85)",
+    backgroundColor: "rgba(255,255,255,0.9)",
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -385,30 +308,9 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   markerDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: "#fff",
-  },
-  markerWrapper: {
-    alignItems: "center",
-    justifyContent: "center",
-    width: 48,
-    height: 48,
-  },
-  pulseCircle: {
-    position: "absolute",
-    width: 28,
-    height: 28,
-    borderRadius: 28,
-    backgroundColor: "#35250aff",
-  },
-  pulseDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 12,
-    backgroundColor: "#f97316",
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     borderWidth: 2,
     borderColor: "#fff",
   },

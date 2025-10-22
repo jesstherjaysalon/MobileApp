@@ -32,7 +32,7 @@ export default function useSendTruckLocation(truckId) {
 
     // Send immediately + every 1 minute
     sendLocation();
-    const interval = setInterval(sendLocation, 60000);
+    const interval = setInterval(sendLocation, 3000);
 
     return () => clearInterval(interval);
   }, [truckId]);

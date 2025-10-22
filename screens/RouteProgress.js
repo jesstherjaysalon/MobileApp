@@ -1,4 +1,6 @@
 // RouteProgressScreen.js — Full fixed implementation with sequential control (bottom-card only)
+// put this in your screens folder (adjust relative import path for WasteInputModal.js as needed)
+
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -12,6 +14,7 @@ import {
   Modal,
   Animated,
   FlatList,
+  Alert,
 } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import moment from "moment";
@@ -19,6 +22,7 @@ import GoogleMapView from "../GoogleMapView";
 import useSendTruckLocation from "../hooks/useSendTruckLocation";
 import api from "../api";
 import { useNavigation } from "@react-navigation/native";
+import WasteInputModal from "../modals/WasteInputModal"; // <-- import modal component
 
 /* ---------------------- helpers ---------------------- */
 const formatDistance = (km) => {
@@ -36,7 +40,7 @@ const formatDuration = (minutes) => {
   return `${hrs}h ${mins}m`;
 };
 
-/* ---------------------- UI modals ---------------------- */
+/* ---------------------- UI modals (Confirm + Pending + Segments list) ---------------------- */
 function ConfirmModal({ visible, title, message, onCancel, onConfirm, loading }) {
   const scale = useRef(new Animated.Value(0.9)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -117,7 +121,7 @@ function PendingWarningModal({ visible, message, onClose }) {
   );
 }
 
-/* Segments list modal (you allowed jumping; we keep it viewable) */
+/* Segments list modal (jump-to view) */
 function SegmentsModal({ visible, onClose, segments, onJumpTo, focusedIndex }) {
   const translateY = useRef(new Animated.Value(40)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -182,11 +186,11 @@ export default function RouteProgressScreen({ route }) {
   const insets = useSafeAreaInsets();
 
   const { routePlanId, truckId } = route?.params || {};
-  useSendTruckLocation(truckId); // keep side-effect hook active (we don't use the returned value here directly)
+  useSendTruckLocation(truckId);
 
   const [loading, setLoading] = useState(true);
   const [routeDetails, setRouteDetails] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(0); // index used for map "current" focus
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [finished, setFinished] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(null);
 
@@ -197,7 +201,11 @@ export default function RouteProgressScreen({ route }) {
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [pendingWarningVisible, setPendingWarningVisible] = useState(false);
 
-  // Focus override: index clicked from modal or marker press
+  // waste modal
+  const [wasteModalVisible, setWasteModalVisible] = useState(false);
+  const [wasteModalRouteDetailId, setWasteModalRouteDetailId] = useState(null);
+
+  // Focus override
   const [focusedIndex, setFocusedIndex] = useState(null);
 
   /* ---------------------- fetch route details ---------------------- */
@@ -210,13 +218,12 @@ export default function RouteProgressScreen({ route }) {
         const segments = res.data?.routeDetails || [];
         if (!mounted) return;
         setRouteDetails(segments);
-        // compute currentIndex as first active index if available
         const firstActive = segments.findIndex((s) => !s.status || s.status === "pending");
         setCurrentIndex(firstActive >= 0 ? firstActive : 0);
         setSelectedIndex(null);
         setFocusedIndex(null);
       } catch (err) {
-        console.error("❌ Failed to fetch route details:", err?.response?.data || err?.message);
+        console.error("Failed to fetch route details:", err?.response?.data || err?.message);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -229,112 +236,110 @@ export default function RouteProgressScreen({ route }) {
   }, [routePlanId]);
 
   /* ---------------------- derived helpers ---------------------- */
-
-  // activeIndex = first pending segment (the only one editable in bottom card)
-  const activeIndex = useMemo(() => {
-    return routeDetails.findIndex((s) => !s.status || s.status === "pending");
-  }, [routeDetails]);
-
-  // quick front-end checks
+  const activeIndex = useMemo(() => routeDetails.findIndex((s) => !s.status || s.status === "pending"), [routeDetails]);
   const anyPendingSegments = useMemo(() => routeDetails.some((s) => !s.status || s.status === "pending"), [routeDetails]);
   const anyMissedSegments = useMemo(() => routeDetails.some((s) => s.status === "missed"), [routeDetails]);
 
-  // helper: patch a segment and return updated segment (re-using API shape)
   const patchSegment = async (id, payload) => {
     const res = await api.patch(`/route-details/${id}/status`, payload);
-    return res.data; // expecting the updated segment object (depends on your backend)
+    return res.data;
   };
 
   const completeSchedule = async () => {
     try {
       await api.patch(`/garbage_schedules/${routePlanId}/complete`);
     } catch (err) {
-      console.error("❌ Failed to mark garbage schedule:", err?.response?.data || err?.message);
+      console.error("Failed to mark garbage schedule:", err?.response?.data || err?.message);
     }
   };
 
   /* ---------------------- advanceSegment (core) ---------------------- */
   const advanceSegment = async (status, isStartOnly = false) => {
-    // IMPORTANT: this function assumes the user already confirmed in the ConfirmModal
     try {
       setConfirmLoading(true);
 
-      // Re-read local state snapshot
       const updated = [...routeDetails];
       const index = selectedIndex !== null ? selectedIndex : currentIndex;
       const segment = updated[index];
       if (!segment) return;
 
-      // Only allow advancing the active segment from the bottom card
       if (index !== activeIndex) {
-        // Defensive: block any attempt to update non-active via front-end
         setPendingWarningVisible(true);
         return;
       }
 
-      // Prepare payloads
       const now = moment().toISOString();
       const segPayload = {};
-      if (isStartOnly) {
-        segPayload.start_time = now;
-      } else {
+      if (isStartOnly) segPayload.start_time = now;
+      else {
         segPayload.status = status;
         segPayload.completed_at = now;
       }
 
-      // PATCH current segment
+      // patch current segment
       try {
         await patchSegment(segment.id, segPayload);
       } catch (err) {
-        // if backend returns validation error (e.g., out-of-order) show console but don't crash
-        console.error("❌ patch current segment failed:", err?.response?.data || err?.message);
+        console.error("patch current segment failed:", err?.response?.data || err?.message);
         throw err;
       }
 
-      // Optimistically update local state
+      // optimistic update
       updated[index] = { ...segment, ...segPayload };
 
-      // If we completed or missed it and there's a next segment, chain its start_time to this completion
+      // if completed/missed and next exists, set its start_time
       if (!isStartOnly && (status === "completed" || status === "missed") && index + 1 < updated.length) {
         const nextSegment = updated[index + 1];
         const nextPayload = { start_time: segPayload.completed_at || now };
-
         try {
           await patchSegment(nextSegment.id, nextPayload);
           updated[index + 1] = { ...nextSegment, ...nextPayload };
         } catch (err) {
-          console.error("❌ patch next segment failed:", err?.response?.data || err?.message);
-          // fallback: still set local state so UI shows something sensible
+          console.error("patch next segment failed:", err?.response?.data || err?.message);
           updated[index + 1] = { ...nextSegment, ...nextPayload };
         }
       }
 
-      // Write back local state
       setRouteDetails(updated);
 
-      // Move index forward if we completed/missed current and there is a next one
+      // If segment was completed -> OPEN modal to collect sacks
+     if (!isStartOnly && status === "completed" && segment.to_terminal_id) {
+  setWasteModalRouteDetailId(segment.id);
+  setWasteModalVisible(true);
+}
+
+      // Move forward
       if (!isStartOnly && index + 1 < updated.length) {
         setCurrentIndex(index + 1);
         setSelectedIndex(null);
         setFocusedIndex(null);
       }
 
-      // If last segment completed, finish schedule
-      if (!isStartOnly && index + 1 >= updated.length) {
-        const completedCount = updated.filter((seg) => seg.status === "completed").length;
-        const missedZones = updated.filter((seg) => seg.status === "missed");
-        setFinished(true);
-        await completeSchedule();
+      // last segment completed
+  if (!isStartOnly && index + 1 >= updated.length) {
+  const completedCount = updated.filter((seg) => seg.status === "completed").length;
+  const missedZones = updated.filter((seg) => seg.status === "missed");
+  setFinished(true);
+  await completeSchedule();
 
-        navigation.replace("RouteSummary", {
-          routePlanId,
-          completedCount,
-          missedZones,
-        });
-      }
+  // ✅ If the segment ends at a terminal — show waste modal and STOP navigation
+  if (segment.to_terminal_id) {
+    setWasteModalRouteDetailId(segment.id);
+    setWasteModalVisible(true);
+
+    // 🚫 Don't proceed to summary yet — wait until modal is submitted
+    return;
+  }
+
+  // ✅ If not terminal, just navigate directly
+  navigation.replace("RouteSummary", {
+    routePlanId,
+    completedCount,
+    missedZones,
+  });
+}
     } catch (err) {
-      // intentionally not showing UI toast here (you may add): backend should also reject out-of-order updates
-      console.error("❌ Error advancing segment:", err?.response?.data || err?.message);
+      console.error("Error advancing segment:", err?.response?.data || err?.message);
     } finally {
       setConfirmLoading(false);
       setConfirmState({ visible: false, status: null, isStartOnly: false, message: "" });
@@ -342,11 +347,10 @@ export default function RouteProgressScreen({ route }) {
     }
   };
 
-  /* ---------------------- confirmAdvance (decides which modal to show) ---------------------- */
+  /* ---------------------- confirmAdvance ---------------------- */
   const confirmAdvance = (status, isStartOnly = false) => {
     const index = selectedIndex !== null ? selectedIndex : currentIndex;
 
-    // if user tries to act on non-active segment via bottom card, block it (safeguard)
     if (index !== activeIndex && !isStartOnly) {
       setPendingWarningVisible(true);
       return;
@@ -355,31 +359,45 @@ export default function RouteProgressScreen({ route }) {
     const isLastSegment = index + 1 >= routeDetails.length;
 
     if (!isStartOnly && status === "completed" && isLastSegment) {
-      // If final completion and there are pending/missed segments elsewhere
       const hasMissed = anyMissedSegments && routeDetails.some((s, idx) => idx !== index && s.status === "missed");
       const hasPending = anyPendingSegments && routeDetails.some((s, idx) => idx !== index && (!s.status || s.status === "pending"));
 
       if (hasPending) {
-        // block finishing route if pending segments still exist
         setPendingWarningVisible(true);
         return;
       }
 
       if (hasMissed) {
-        // allow finish route but confirm because some were missed
         const message = "There are missed segments. Would you like to proceed or go back?";
         setFinalConfirm({ visible: true, message, status });
         return;
       }
     }
 
-    // default per-segment confirmation
     let message = "";
     if (isStartOnly) message = "Do you want to start this segment now?";
     else if (status === "completed") message = "Confirm this segment as completed.";
     else if (status === "missed") message = "Mark this segment as missed?";
 
     setConfirmState({ visible: true, status, isStartOnly, message });
+  };
+
+  /* ---------------------- handle modal saved callback ---------------------- */
+  const handleWasteSaved = (saved) => {
+    // backend response saved - attach to the segment
+    try {
+      const segIndex = routeDetails.findIndex((s) => s.id === wasteModalRouteDetailId);
+      if (segIndex !== -1) {
+        const updated = [...routeDetails];
+        updated[segIndex] = { ...updated[segIndex], collection: saved };
+        setRouteDetails(updated);
+      }
+    } catch (err) {
+      console.error("attach waste saved error:", err);
+    } finally {
+      setWasteModalVisible(false);
+      setWasteModalRouteDetailId(null);
+    }
   };
 
   /* ---------------------- UI render guards ---------------------- */
@@ -400,12 +418,9 @@ export default function RouteProgressScreen({ route }) {
     );
   }
 
-  // visibleIndex = index for bottom card (either selected or current)
   const visibleIndex = selectedIndex !== null ? selectedIndex : currentIndex;
   const currentSegment = routeDetails[visibleIndex] || {};
 
-  // Bottom-card button enabling rules (SEQUENTIAL CONTROL APPLIED HERE ONLY)
-  // Buttons are enabled only when visibleIndex === activeIndex (the first pending segment)
   const isActiveSegment = visibleIndex === activeIndex;
   const alreadyFinalized = currentSegment?.status === "completed" || currentSegment?.status === "missed";
 
@@ -423,12 +438,12 @@ export default function RouteProgressScreen({ route }) {
           if (typeof idx === "number") {
             setSelectedIndex(idx);
             setCurrentIndex(idx);
-            setFocusedIndex(idx); // focus map on marker and mark orange
+            setFocusedIndex(idx);
           }
         }}
       />
 
-      {/* Top-right toggle button to open segments modal */}
+      {/* segments toggle */}
       <View style={styles.topControls} pointerEvents="box-none">
         <TouchableOpacity style={styles.segmentsToggle} onPress={() => setSegmentsModalVisible(true)} accessibilityRole="button">
           <Icon name="menu" size={20} color="#fff" />
@@ -436,7 +451,7 @@ export default function RouteProgressScreen({ route }) {
         </TouchableOpacity>
       </View>
 
-      {/* Bottom Card (only shown when user selects a segment from modal OR auto-focus current) */}
+      {/* Bottom card */}
       {selectedIndex !== null && (
         <View style={[styles.card, { paddingBottom: Math.max(insets.bottom, Platform.OS === "android" ? 16 : 10) + 8 }]}>
           <TouchableOpacity
@@ -451,11 +466,8 @@ export default function RouteProgressScreen({ route }) {
           </TouchableOpacity>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            <Text style={styles.title}>
-              Segment {visibleIndex + 1} of {routeDetails.length}
-            </Text>
+            <Text style={styles.title}>Segment {visibleIndex + 1} of {routeDetails.length}</Text>
 
-            {/* From/To */}
             <View style={styles.timelineContainer}>
               <View style={styles.timelineRow}>
                 <Icon name="location-on" size={20} color="#10b981" style={styles.icon} />
@@ -476,7 +488,6 @@ export default function RouteProgressScreen({ route }) {
               </View>
             </View>
 
-            {/* Info */}
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Distance:</Text>
               <Text style={styles.infoValue}>{formatDistance(Number(currentSegment.distance_km || 0))}</Text>
@@ -489,10 +500,8 @@ export default function RouteProgressScreen({ route }) {
 
             <Text style={styles.footerNote}>Start and arrival times may vary. Updates will be sent automatically.</Text>
 
-            {/* Actions (SEQUENTIAL CONTROL APPLIED: only activeIndex is editable) */}
             {!finished && (
               <View style={styles.buttonRow}>
-                {/* Start button shown for the active segment when no start_time exists */}
                 {visibleIndex === activeIndex && !currentSegment?.start_time ? (
                   <TouchableOpacity
                     disabled={disableStartButton}
@@ -503,7 +512,6 @@ export default function RouteProgressScreen({ route }) {
                     <Text style={styles.buttonText}>Start Segment</Text>
                   </TouchableOpacity>
                 ) : (
-                  // For non-active or already-started segments show Complete+Missed buttons, but they are enabled only for active segment
                   <>
                     <TouchableOpacity
                       disabled={disableCompleteButton}
@@ -529,7 +537,7 @@ export default function RouteProgressScreen({ route }) {
         </View>
       )}
 
-      {/* Segments list modal (still allows jumping to any segment for view) */}
+      {/* Segments modal */}
       <SegmentsModal
         visible={segmentsModalVisible}
         onClose={() => setSegmentsModalVisible(false)}
@@ -538,11 +546,11 @@ export default function RouteProgressScreen({ route }) {
         onJumpTo={(idx) => {
           setSelectedIndex(idx);
           setCurrentIndex(idx);
-          setFocusedIndex(idx); // instruct the map to focus and mark the marker
+          setFocusedIndex(idx);
         }}
       />
 
-      {/* Per-action confirmation modal */}
+      {/* Confirmations */}
       <ConfirmModal
         visible={!!confirmState.visible}
         title={confirmState.isStartOnly ? "Start Segment" : confirmState.status === "completed" ? "Complete Segment" : "Mark as Missed"}
@@ -552,23 +560,26 @@ export default function RouteProgressScreen({ route }) {
         onConfirm={() => advanceSegment(confirmState.status, confirmState.isStartOnly)}
       />
 
-      {/* Final-check confirmation when finishing route but missed segments exist */}
       <ConfirmModal
         visible={!!finalConfirm.visible}
         title={"Finish Route"}
         message={finalConfirm.message}
         loading={confirmLoading}
         onCancel={() => setFinalConfirm({ visible: false, message: "", status: null })}
-        onConfirm={() => {
-          advanceSegment(finalConfirm.status, false);
-        }}
+        onConfirm={() => advanceSegment(finalConfirm.status, false)}
       />
 
-      {/* Pending-block warning modal */}
-      <PendingWarningModal
-        visible={pendingWarningVisible}
-        message={"There are still pending segments. You must finish all before completing the route."}
-        onClose={() => setPendingWarningVisible(false)}
+      <PendingWarningModal visible={pendingWarningVisible} message={"There are still pending segments. You must finish all before completing the route."} onClose={() => setPendingWarningVisible(false)} />
+
+      {/* Waste Input Modal (imported, appears only after marking completed) */}
+      <WasteInputModal
+        visible={wasteModalVisible}
+        onClose={() => {
+          setWasteModalVisible(false);
+          setWasteModalRouteDetailId(null);
+        }}
+        routeDetailId={wasteModalRouteDetailId}
+        onSaved={(saved) => handleWasteSaved(saved)}
       />
     </SafeAreaView>
   );
@@ -662,7 +673,7 @@ const styles = StyleSheet.create({
   missedButton: { backgroundColor: "#ef4444" },
   buttonText: { color: "#fff", fontWeight: "700", marginLeft: 6 },
 
-  // Modal styles
+  // Modal styles (Confirm and Segments)
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(2,6,23,0.55)",
@@ -686,7 +697,7 @@ const styles = StyleSheet.create({
   segmentBadge: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999 },
   segmentBadgeText: { color: "#fff", fontWeight: "700" },
 
-  // Confirm card
+  // Confirm card styles
   confirmCard: {
     marginHorizontal: 24,
     marginBottom: 80,

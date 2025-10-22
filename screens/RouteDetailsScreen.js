@@ -55,10 +55,11 @@ export default function RouteDetailsScreen() {
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(false);
 
-  // 🕓 Manila time check
-  const pickupDateManila = moment.tz(pickup_datetime, "Asia/Manila").startOf("day");
-  const todayManila = moment.tz("Asia/Manila").startOf("day");
-  const isScheduleToday = pickupDateManila.isSame(todayManila, "day");
+  // 🕓 Manila time comparison
+  const pickupDateTimeManila = moment.tz(pickup_datetime, "Asia/Manila");
+  const nowManila = moment.tz("Asia/Manila");
+  const isScheduleAvailable = nowManila.isSameOrAfter(pickupDateTimeManila);
+  const formattedPickup = pickupDateTimeManila.format("MMMM Do YYYY, h:mm A");
 
   // 📡 Fetch route details
   const fetchDetails = async () => {
@@ -90,12 +91,10 @@ export default function RouteDetailsScreen() {
       return;
     }
 
-    if (!isScheduleToday) {
+    if (!isScheduleAvailable) {
       Alert.alert(
-        "Schedule Not Available",
-        `This route will open on ${moment
-          .tz(pickup_datetime, "Asia/Manila")
-          .format("MMMM Do YYYY, h:mm A")}`
+        "Schedule Not Yet Available",
+        `This route will be available starting ${formattedPickup}`
       );
       return;
     }
@@ -109,14 +108,23 @@ export default function RouteDetailsScreen() {
             setStarting(true);
             await api.patch(`/garbage_schedules/${routePlanId}/start`, {
               remarks: "Route started",
-              start_time: moment().tz("Asia/Manila").format("YYYY-MM-DD HH:mm:ss"),
+              start_time: moment()
+                .tz("Asia/Manila")
+                .format("YYYY-MM-DD HH:mm:ss"),
             });
 
-            const coordinates = details.map((d) => [Number(d.from_lng), Number(d.from_lat)]);
+            const coordinates = details.map((d) => [
+              Number(d.from_lng),
+              Number(d.from_lat),
+            ]);
             const last = details[details.length - 1];
             coordinates.push([Number(last.to_lng), Number(last.to_lat)]);
 
-            navigation.navigate("RouteProgress", { routePlanId, coordinates, truckId });
+            navigation.navigate("RouteProgress", {
+              routePlanId,
+              coordinates,
+              truckId,
+            });
           } catch (error) {
             Alert.alert("Error", "Failed to start the route. Try again.");
           } finally {
@@ -145,14 +153,27 @@ export default function RouteDetailsScreen() {
     );
 
   // 📊 Totals
-  const totalDistance = details.reduce((sum, r) => sum + Number(r.distance_km || 0), 0);
-  const totalDuration = Number(details.reduce((sum, r) => sum + Number(r.duration_min || 0), 0).toFixed(2));
+  const totalDistance = details.reduce(
+    (sum, r) => sum + Number(r.distance_km || 0),
+    0
+  );
+  const totalDuration = Number(
+    details.reduce((sum, r) => sum + Number(r.duration_min || 0), 0).toFixed(2)
+  );
 
   const renderSummary = () => (
     <View style={styles.summaryContainer}>
       {[
-        { icon: "map-marker-distance", label: "Total Distance", value: formatDistance(totalDistance) },
-        { icon: "clock-outline", label: "Total Duration", value: formatDuration(totalDuration) },
+        {
+          icon: "map-marker-distance",
+          label: "Total Distance",
+          value: formatDistance(totalDistance),
+        },
+        {
+          icon: "clock-outline",
+          label: "Total Duration",
+          value: formatDuration(totalDuration),
+        },
       ].map((item, index) => (
         <View key={index} style={styles.summaryCard}>
           <Icon name={item.icon} size={28} color="#1B5E20" />
@@ -169,16 +190,22 @@ export default function RouteDetailsScreen() {
         <Text style={styles.cardTitle}>
           {item.from_name} → {item.to_name}
         </Text>
-        <Text style={[styles.status, getStatusStyle(item.status)]}>{item.status}</Text>
+        <Text style={[styles.status, getStatusStyle(item.status)]}>
+          {item.status}
+        </Text>
       </View>
       <View style={styles.cardDetails}>
         <View style={styles.row}>
           <Text style={styles.label}>Distance</Text>
-          <Text style={styles.value}>{formatDistance(Number(item.distance_km || 0))}</Text>
+          <Text style={styles.value}>
+            {formatDistance(Number(item.distance_km || 0))}
+          </Text>
         </View>
         <View style={styles.row}>
           <Text style={styles.label}>Duration</Text>
-          <Text style={styles.value}>{formatDuration(Number(item.duration_min || 0))}</Text>
+          <Text style={styles.value}>
+            {formatDuration(Number(item.duration_min || 0))}
+          </Text>
         </View>
         <View style={styles.row}>
           <Text style={styles.label}>Speed</Text>
@@ -192,7 +219,12 @@ export default function RouteDetailsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <LinearGradient colors={["#4CAF50", "#2E7D32"]} style={styles.header}>
         <View style={styles.headerRow}>
-          <Icon name="road-variant" size={26} color="#fff" style={{ marginRight: 6 }} />
+          <Icon
+            name="road-variant"
+            size={26}
+            color="#fff"
+            style={{ marginRight: 6 }}
+          />
           <Text style={styles.headerText}>Route Plan #{routePlanId}</Text>
         </View>
       </LinearGradient>
@@ -207,26 +239,46 @@ export default function RouteDetailsScreen() {
             <Text style={styles.sectionHeader}>Route Segments</Text>
           </>
         }
-        ListEmptyComponent={<Text style={styles.noData}>No route details found.</Text>}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        contentContainerStyle={{ paddingBottom: 120 }}
+        ListEmptyComponent={
+          <Text style={styles.noData}>No route details found.</Text>
+        }
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        contentContainerStyle={{ paddingBottom: 160 }}
       />
 
       <View style={[styles.fabWrapper, { paddingBottom: insets.bottom + 10 }]}>
         <TouchableOpacity
-          style={[styles.fabButton, { backgroundColor: isScheduleToday ? "#2E7D32" : "#BDBDBD" }]}
+          style={[
+            styles.fabButton,
+            { backgroundColor: isScheduleAvailable ? "#2E7D32" : "#BDBDBD" },
+          ]}
           onPress={handleStartRoute}
-          disabled={!isScheduleToday || starting}
+          disabled={!isScheduleAvailable || starting}
         >
           {starting ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <>
-              <Icon name="truck" size={24} color="#fff" style={{ marginRight: 8 }} />
+              <Icon
+                name="truck"
+                size={24}
+                color="#fff"
+                style={{ marginRight: 8 }}
+              />
               <Text style={styles.fabText}>Start Route</Text>
             </>
           )}
         </TouchableOpacity>
+
+        {!isScheduleAvailable && (
+          <View style={styles.warningContainer}>
+            <Text style={styles.warningText}>
+              ⚠️ This schedule will start on {formattedPickup}
+            </Text>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -316,5 +368,28 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   fabText: { color: "#fff", fontSize: 18, fontWeight: "700" },
+
+  // ⚠️ Modern warning style
+  warningContainer: {
+    backgroundColor: "rgba(198, 40, 40, 0.1)", // transparent red
+    borderColor: "rgba(198, 40, 40, 0.5)",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginHorizontal: 30,
+    alignItems: "center",
+    shadowColor: "#C62828",
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  warningText: {
+    color: "#C62828",
+    fontWeight: "700",
+    fontSize: 14,
+    textAlign: "center",
+  },
+
   noData: { textAlign: "center", color: "#777", marginTop: 40, fontSize: 16 },
 });
