@@ -16,22 +16,23 @@ import GoogleMapView from "../GoogleMapView";
 import useSendTruckLocation from "../hooks/useSendTruckLocation";
 import api from "../api";
 import { useNavigation } from "@react-navigation/native";
+import WasteInputModal from "../rescheModal/WasteInputModal";
 
 export default function ReschedProgress({ route }) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-
   const { rescheduleId, truckId } = route?.params || {};
 
   const [loading, setLoading] = useState(true);
   const [reschedDetails, setReschedDetails] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [finished, setFinished] = useState(false);
-
-  // 👇 marker tap selection
   const [selectedIndex, setSelectedIndex] = useState(null);
 
   const truckLocation = useSendTruckLocation(truckId);
+
+  const [wasteModalVisible, setWasteModalVisible] = useState(false);
+  const [activeReschedDetailId, setActiveReschedDetailId] = useState(null);
 
   useEffect(() => {
     const fetchResched = async () => {
@@ -63,39 +64,37 @@ export default function ReschedProgress({ route }) {
     }
   };
 
-  const advanceSegment = async (status, isStartOnly = false) => {
+  const handleWasteSaved = async () => {
+    await handleSubmitWaste(); // reuse existing function
+  };
+
+  const handleSubmitWaste = async () => {
+    const segment = reschedDetails[currentIndex];
+    if (!segment) return;
+
     try {
-      const updated = [...reschedDetails];
-      const segment = updated[currentIndex];
-      if (!segment) return;
-
-      const payload = {};
-
-      if (isStartOnly) {
-        payload.start_time = moment().toISOString();
-      } else {
-        payload.status = status;
-        payload.completed_at = moment().toISOString();
-      }
+      const payload = {
+        status: "completed",
+        completed_at: moment().toISOString(),
+      };
 
       await api.patch(`/resched-details/${segment.id}/status`, payload);
+
+      const updated = [...reschedDetails];
       updated[currentIndex] = { ...segment, ...payload };
       setReschedDetails(updated);
 
-      if ((status === "completed" || status === "missed") && currentIndex + 1 < updated.length) {
+      setWasteModalVisible(false);
+
+      if (currentIndex + 1 < updated.length) {
         const nextSegment = updated[currentIndex + 1];
         const nextPayload = { start_time: moment().toISOString() };
         await api.patch(`/resched-details/${nextSegment.id}/status`, nextPayload);
         updated[currentIndex + 1] = { ...nextSegment, ...nextPayload };
         setReschedDetails(updated);
-      }
-
-      if (!isStartOnly && currentIndex + 1 < updated.length) {
         setCurrentIndex((i) => i + 1);
-        setSelectedIndex(null); // auto-close marker card after completing
-      }
-
-      if (!isStartOnly && currentIndex + 1 >= updated.length) {
+        setSelectedIndex(null);
+      } else {
         const missedCount = updated.filter((seg) => seg.status === "missed").length;
         Alert.alert(
           "Reschedule Completed",
@@ -107,8 +106,54 @@ export default function ReschedProgress({ route }) {
         setFinished(true);
       }
     } catch (err) {
-      console.error("❌ Error updating resched segment:", err.response?.data || err.message);
-      Alert.alert("Error", "Failed to update reschedule status");
+      console.error("❌ Error submitting waste data:", err.response?.data || err.message);
+      Alert.alert("Error", "Failed to save waste collection data");
+    }
+  };
+
+  const markSegmentMissed = async () => {
+    const segment = reschedDetails[currentIndex];
+    if (!segment) return;
+    try {
+      const payload = { status: "missed", completed_at: moment().toISOString() };
+      await api.patch(`/resched-details/${segment.id}/status`, payload);
+
+      const updated = [...reschedDetails];
+      updated[currentIndex] = { ...segment, ...payload };
+      setReschedDetails(updated);
+
+      if (currentIndex + 1 < updated.length) {
+        const nextSegment = updated[currentIndex + 1];
+        const nextPayload = { start_time: moment().toISOString() };
+        await api.patch(`/resched-details/${nextSegment.id}/status`, nextPayload);
+        updated[currentIndex + 1] = { ...nextSegment, ...nextPayload };
+        setReschedDetails(updated);
+        setCurrentIndex((i) => i + 1);
+        setSelectedIndex(null);
+      } else {
+        Alert.alert("Reschedule Completed", "Reschedule process finished.", [
+          { text: "OK", onPress: () => completeReschedule() },
+        ]);
+        setFinished(true);
+      }
+    } catch (err) {
+      console.error("❌ Error marking missed:", err.response?.data || err.message);
+      Alert.alert("Error", "Failed to mark segment as missed");
+    }
+  };
+
+  const startSegment = async () => {
+    const segment = reschedDetails[currentIndex];
+    if (!segment) return;
+    try {
+      const payload = { start_time: moment().toISOString() };
+      await api.patch(`/resched-details/${segment.id}/status`, payload);
+      const updated = [...reschedDetails];
+      updated[currentIndex] = { ...segment, ...payload };
+      setReschedDetails(updated);
+    } catch (err) {
+      console.error("❌ Error starting segment:", err.response?.data || err.message);
+      Alert.alert("Error", "Failed to start segment");
     }
   };
 
@@ -129,29 +174,27 @@ export default function ReschedProgress({ route }) {
     );
   }
 
-  // 👇 Show card only if marker tapped
-  const currentSegment =
-    selectedIndex !== null ? reschedDetails[selectedIndex] : null;
-
-  // disable buttons if already completed/missed
+  const currentSegment = selectedIndex !== null ? reschedDetails[selectedIndex] : null;
   const isDisabled =
     currentSegment?.status === "completed" || currentSegment?.status === "missed";
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Map */}
       <GoogleMapView
         segments={reschedDetails}
         currentIndex={currentIndex}
         liveTruckLocation={truckLocation}
-        onMarkerPress={(segment, idx) => {
-          if (typeof idx === "number") {
-            setSelectedIndex(idx);
-          }
-        }}
+        onMarkerPress={(segment, idx) => setSelectedIndex(idx)}
       />
 
-      {/* Segment Info Card - only visible if marker selected */}
+      {/* ✅ Connected Waste Input Modal */}
+      <WasteInputModal
+        visible={wasteModalVisible}
+        onClose={() => setWasteModalVisible(false)}
+        reschedDetailId={activeReschedDetailId}
+        onSaved={handleWasteSaved}
+      />
+
       {currentSegment && (
         <View
           style={[
@@ -159,11 +202,7 @@ export default function ReschedProgress({ route }) {
             { paddingBottom: Math.max(insets.bottom, Platform.OS === "android" ? 16 : 10) + 8 },
           ]}
         >
-          {/* Close button */}
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => setSelectedIndex(null)}
-          >
+          <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedIndex(null)}>
             <Icon name="close" size={20} color="#374151" />
           </TouchableOpacity>
 
@@ -172,7 +211,6 @@ export default function ReschedProgress({ route }) {
               Segment {selectedIndex + 1} of {reschedDetails.length}
             </Text>
 
-            {/* Timeline */}
             <View style={styles.timelineContainer}>
               <View style={styles.timelineRow}>
                 <Icon name="location-on" size={20} color="#10b981" style={styles.icon} />
@@ -193,7 +231,6 @@ export default function ReschedProgress({ route }) {
               </View>
             </View>
 
-            {/* Info */}
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Distance:</Text>
               <Text style={styles.infoValue}>
@@ -206,22 +243,12 @@ export default function ReschedProgress({ route }) {
               <Text style={styles.infoValue}>{currentSegment.duration_min || 0} min</Text>
             </View>
 
-            <Text style={styles.footerNote}>
-              Start and arrival times may vary. Updates will be sent automatically.
-            </Text>
-
-            {/* Actions */}
             {!finished && (
               <View style={styles.buttonRow}>
                 {!currentSegment?.start_time ? (
                   <TouchableOpacity
-                    disabled={!!currentSegment?.start_time}
-                    onPress={() => advanceSegment(null, true)}
-                    style={[
-                      styles.actionButton,
-                      styles.startButton,
-                      currentSegment?.start_time && { backgroundColor: "#9ca3af" },
-                    ]}
+                    onPress={startSegment}
+                    style={[styles.actionButton, styles.startButton]}
                   >
                     <Icon name="play-arrow" size={20} color="#fff" />
                     <Text style={styles.buttonText}>Start Segment</Text>
@@ -230,7 +257,10 @@ export default function ReschedProgress({ route }) {
                   <>
                     <TouchableOpacity
                       disabled={isDisabled}
-                      onPress={() => advanceSegment("completed")}
+                      onPress={() => {
+                        setActiveReschedDetailId(currentSegment.id);
+                        setWasteModalVisible(true);
+                      }}
                       style={[
                         styles.actionButton,
                         styles.completeButton,
@@ -240,9 +270,10 @@ export default function ReschedProgress({ route }) {
                       <Icon name="check-circle" size={20} color="#fff" />
                       <Text style={styles.buttonText}>Complete</Text>
                     </TouchableOpacity>
+
                     <TouchableOpacity
                       disabled={isDisabled}
-                      onPress={() => advanceSegment("missed")}
+                      onPress={markSegmentMissed}
                       style={[
                         styles.actionButton,
                         styles.missedButton,
@@ -268,7 +299,6 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f9fafb" },
   loadingText: { marginTop: 10, color: "#6b7280", fontSize: 16 },
   emptyText: { color: "#9ca3af", fontSize: 16 },
-
   card: {
     position: "absolute",
     bottom: 0,
@@ -285,7 +315,6 @@ const styles = StyleSheet.create({
     elevation: 8,
     maxHeight: "55%",
   },
-
   closeButton: {
     position: "absolute",
     top: 10,
@@ -295,7 +324,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 6,
   },
-
   title: { fontSize: 18, fontWeight: "700", color: "#111827", marginBottom: 16, marginTop: 8 },
   timelineContainer: { marginVertical: 16 },
   timelineRow: { flexDirection: "row", alignItems: "center", marginBottom: 24 },
@@ -313,8 +341,6 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 6 },
   infoLabel: { fontSize: 13, color: "#6b7280" },
   infoValue: { fontSize: 14, fontWeight: "600", color: "#111827" },
-  footerNote: { fontSize: 12, color: "#6b7280", lineHeight: 16, marginTop: 8, marginBottom: 16 },
-
   buttonRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12 },
   actionButton: {
     flex: 0.48,

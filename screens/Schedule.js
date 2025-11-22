@@ -24,7 +24,6 @@ export default function Schedule() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
-  const [filter, setFilter] = useState("all");
 
   const navigation = useNavigation();
 
@@ -43,13 +42,12 @@ export default function Schedule() {
       setError(null);
       const storedUser = await getUser();
       setUser(storedUser);
+
       const response = await api.get("/route-plans");
       setRoutePlans(response.data.routePlans || []);
     } catch (err) {
       console.error(err);
-      setError(
-        err.response?.data?.message || "Unable to fetch schedule data."
-      );
+      setError(err.response?.data?.message || "Unable to fetch schedule data.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -68,10 +66,8 @@ export default function Schedule() {
   if (loading)
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#006400" />
-        <Text style={{ marginTop: 10, color: "#006400", fontWeight: "600" }}>
-          Loading schedules...
-        </Text>
+        <ActivityIndicator size="large" color="#166534" />
+        <Text style={styles.loadingText}>Loading schedules...</Text>
       </View>
     );
 
@@ -85,14 +81,7 @@ export default function Schedule() {
       </View>
     );
 
-  const filteredPlans =
-    filter === "all"
-      ? routePlans
-      : routePlans.filter(
-          (plan) => plan.schedule?.status?.toLowerCase() === filter
-        );
-
-  const groupedSchedules = groupBySchedule(filteredPlans);
+  const groupedSchedules = groupBySchedule(routePlans);
 
   const sortedSchedules = Object.entries(groupedSchedules).sort((a, b) => {
     const aDate = new Date(a[1][0]?.schedule?.pickup_datetime).getTime() || 0;
@@ -102,51 +91,20 @@ export default function Schedule() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#eafbea" />
+      <StatusBar barStyle="dark-content" backgroundColor="#f6fef7" />
 
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.headerRow}>
-          <MaterialIcons name="event-note" size={26} color="#006400" />
-          <Text style={styles.headerText}>
-            Schedules for {user?.name || "User"}
-          </Text>
+          <MaterialIcons name="event-note" size={30} color="#166534" />
+          <Text style={styles.headerText}>Schedules</Text>
         </View>
 
-        {/* Filter Buttons */}
-        <View style={styles.filterRow}>
-          {["all", "pending", "completed"].map((status) => (
-            <TouchableOpacity
-              key={status}
-              style={[
-                styles.filterButton,
-                filter === status && styles.filterButtonActive,
-              ]}
-              onPress={() => setFilter(status)}
-            >
-              <MaterialIcons
-                name={
-                  status === "all"
-                    ? "list"
-                    : status === "pending"
-                    ? "schedule"
-                    : "check-circle"
-                }
-                size={18}
-                color={filter === status ? "#fff" : "#1b5e20"}
-                style={{ marginRight: 6 }}
-              />
-              <Text
-                style={[
-                  styles.filterText,
-                  filter === status && styles.filterTextActive,
-                ]}
-              >
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* Description */}
+        <Text style={styles.description}>
+          View your assigned waste collection schedules below. Tap a schedule to
+          see detailed route information and zone assignments.
+        </Text>
 
         {/* Schedule List */}
         {sortedSchedules.length > 0 ? (
@@ -156,7 +114,7 @@ export default function Schedule() {
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
             }
-            contentContainerStyle={{ paddingBottom: 100 }}
+            contentContainerStyle={{ paddingBottom: 120 }}
             renderItem={({ item }) => {
               const [scheduleId, plans] = item;
               const schedule = plans[0]?.schedule;
@@ -181,9 +139,10 @@ export default function Schedule() {
 
               const status = schedule?.status || "Unknown";
               const statusLower = status.toLowerCase();
+
               const statusStyle =
                 statusLower === "pending"
-                  ? styles.activeBadge
+                  ? styles.pendingBadge
                   : statusLower === "inactive"
                   ? styles.inactiveBadge
                   : styles.completedBadge;
@@ -192,10 +151,10 @@ export default function Schedule() {
                 <TouchableOpacity
                   style={[
                     styles.card,
-                    statusLower === "inactive" && { backgroundColor: "#ffebee" },
-                    statusLower === "completed" && { opacity: 0.7 },
+                    statusLower === "inactive" && { backgroundColor: "#fff4f4" },
+                    statusLower === "completed" && { opacity: 0.75 },
                   ]}
-                  activeOpacity={0.9}
+                  activeOpacity={0.85}
                   disabled={statusLower === "completed"}
                   onPress={() =>
                     navigation.navigate("RouteDetailsScreen", {
@@ -205,22 +164,24 @@ export default function Schedule() {
                     })
                   }
                 >
+                  {/* HEADER */}
                   <View style={styles.cardHeader}>
                     <MaterialIcons
                       name="schedule"
-                      size={20}
-                      color="#2e7d32"
-                      style={{ marginRight: 8 }}
+                      size={24}
+                      color="#14532d"
+                      style={{ marginRight: 10 }}
                     />
                     <Text style={styles.pickupDate}>{scheduleName}</Text>
                   </View>
 
+                  {/* INFO */}
                   <View style={styles.infoRow}>
                     <View style={styles.infoItem}>
                       <MaterialIcons
                         name="location-city"
-                        size={18}
-                        color="#2e7d32"
+                        size={20}
+                        color="#166534"
                       />
                       <Text style={styles.infoValue}>{barangayName}</Text>
                     </View>
@@ -228,35 +189,35 @@ export default function Schedule() {
                     <View style={styles.infoItem}>
                       <MaterialIcons
                         name="local-shipping"
-                        size={18}
-                        color="#2e7d32"
+                        size={20}
+                        color="#166534"
                       />
                       <Text style={styles.infoValue}>{truckInfo}</Text>
                     </View>
+                  </View>
 
-                    <View style={styles.infoItem}>
-                      <MaterialIcons
-                        name="assignment-turned-in"
-                        size={18}
-                        color="#2e7d32"
-                      />
-                      <View style={[styles.statusBadge, statusStyle]}>
-                        <Text style={styles.statusText}>{status}</Text>
-                      </View>
+                  {/* STATUS */}
+                  <View style={styles.statusContainer}>
+                    <MaterialIcons
+                      name="assignment-turned-in"
+                      size={20}
+                      color="#166534"
+                    />
+                    <View style={[styles.statusBadge, statusStyle]}>
+                      <Text style={styles.statusText}>{status}</Text>
                     </View>
                   </View>
 
+                  {/* ZONES */}
                   <Text style={styles.zonesHeader}>Zones</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                  >
+
+                  <View style={styles.zoneGrid}>
                     {plans.map((plan, index) => (
-                      <View key={index} style={styles.zoneItem}>
+                      <View key={index} style={styles.zoneCell}>
                         <MaterialIcons
                           name="map"
-                          size={16}
-                          color="#006400"
+                          size={18}
+                          color="#166534"
                           style={{ marginRight: 4 }}
                         />
                         <Text style={styles.zoneName}>
@@ -264,38 +225,32 @@ export default function Schedule() {
                         </Text>
                       </View>
                     ))}
-                  </ScrollView>
+                  </View>
                 </TouchableOpacity>
               );
             }}
           />
         ) : (
-          <Text style={styles.noData}>No schedules found</Text>
+          <Text style={styles.noData}>No schedules found.</Text>
         )}
       </View>
     </SafeAreaView>
   );
 }
 
+// ---------------------  STYLES  -----------------------
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#eafbea",
+    backgroundColor: "#f6fef7",
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
-  container: { flex: 1, paddingHorizontal: 18, paddingTop: 12 },
+  container: { flex: 1, paddingHorizontal: 18, paddingTop: 10 },
+
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  headerText: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#004d00",
-    marginLeft: 10,
-  },
+  loadingText: { marginTop: 10, color: "#166534", fontWeight: "600" },
+
   errorText: {
     fontSize: 16,
     color: "#c62828",
@@ -304,98 +259,125 @@ const styles = StyleSheet.create({
   },
   retryBtn: {
     marginTop: 10,
-    backgroundColor: "#006400",
+    backgroundColor: "#166534",
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 10,
   },
   retryText: { color: "#fff", fontWeight: "600" },
-  filterRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  filterButton: {
+
+  headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#c8e6c9",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 24,
+    marginBottom: 6,
   },
-  filterButtonActive: { backgroundColor: "#006400" },
-  filterText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1b5e20",
+  headerText: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: "#064e3b",
+    marginLeft: 10,
   },
-  filterTextActive: { color: "#fff" },
+
+  description: {
+    fontSize: 15,
+    color: "#4b5563",
+    marginBottom: 25,
+    lineHeight: 20,
+  },
+
+  /* BIG MODERN CARD */
   card: {
     backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 18,
+    borderRadius: 22,
+    padding: 22,
+    marginBottom: 26,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    borderLeftWidth: 4,
-    borderLeftColor: "#2e7d32",
+    shadowRadius: 10,
+    elevation: 4,
+    borderLeftWidth: 5,
+    borderLeftColor: "#15803d",
   },
-  cardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
   pickupDate: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#1b5e20",
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#065f46",
   },
+
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 14,
   },
   infoItem: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    marginRight: 6,
+    flex: 1,
+    marginRight: 10,
   },
   infoValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1b5e20",
-    marginLeft: 6,
-  },
-  statusBadge: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    marginLeft: 6,
-  },
-  statusText: { fontWeight: "700", color: "#fff" },
-  activeBadge: { backgroundColor: "#4caf50" },
-  inactiveBadge: { backgroundColor: "#f44336" },
-  completedBadge: { backgroundColor: "#9e9e9e" },
-  zonesHeader: {
     fontSize: 15,
-    fontWeight: "700",
-    color: "#004d00",
-    marginTop: 8,
-    marginBottom: 6,
+    fontWeight: "600",
+    color: "#064e3b",
+    marginLeft: 6,
   },
-  zoneItem: {
+
+  statusContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#c8e6c9",
-    paddingVertical: 6,
+    marginBottom: 16,
+  },
+
+  statusBadge: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    marginLeft: 8,
+  },
+  statusText: { fontWeight: "700", color: "#fff" },
+
+  pendingBadge: { backgroundColor: "#4caf50" },
+  inactiveBadge: { backgroundColor: "#e53935" },
+  completedBadge: { backgroundColor: "#9e9e9e" },
+
+  zonesHeader: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#065f46",
+    marginBottom: 10,
+  },
+
+  /* 2-COLUMN GRID LAYOUT */
+  zoneGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  zoneCell: {
+    width: "48%",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#dcfce7",
+    paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 14,
-    marginRight: 8,
   },
-  zoneName: { fontSize: 14, fontWeight: "600", color: "#004d00" },
+  zoneName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#065f46",
+  },
+
   noData: {
     fontSize: 16,
-    color: "#666",
+    color: "#6b7280",
     textAlign: "center",
     marginTop: 40,
     fontWeight: "500",

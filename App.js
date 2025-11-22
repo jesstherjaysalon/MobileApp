@@ -12,6 +12,10 @@ import ZonePage from './screens/ZonePage';
 import RouteSummaryScreen from './screens/RouteSummaryScreen';
 import SplashScreen from './screens/SplashScreen';
 import ForgotPassword from './screens/ForgotPassword';
+import DriverPerfomanceScreen from './screens/DriverPerformanceScreen';
+import WasteCollectionScreen from './screens/WasteCollectionScreen';
+import DriverHistoryScreen from './screens/DriverHistoryScreen';
+import ZoneLeaderProfile from './screens/ZoneLeaderProfile';
 
 const Stack = createNativeStackNavigator();
 
@@ -73,6 +77,27 @@ function App() {
          <Stack.Screen
           name="ForgotPassword"
           component={ForgotPassword}
+          options={{ headerShown: false }}
+        />
+           <Stack.Screen
+          name="DriverPerformanceScreen"
+          component={DriverPerfomanceScreen}
+          options={{ headerShown: false }}
+        />
+          <Stack.Screen
+          name="CollectionScreen"
+          component={WasteCollectionScreen}
+          options={{ headerShown: false }}
+        />
+
+         <Stack.Screen
+          name="HistoryScreen"
+          component={DriverHistoryScreen}
+          options={{ headerShown: false }}
+        />
+         <Stack.Screen
+          name="Profile"
+          component={ZoneLeaderProfile}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

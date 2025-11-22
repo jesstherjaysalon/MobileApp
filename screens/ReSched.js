@@ -17,21 +17,30 @@ import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import api from "../api";
 
 export default function ReSched() {
-  const [schedules, setSchedules] = useState([]);
+  const [schedules, setSchedules] = useState([]); // must be array
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
 
   const navigation = useNavigation();
 
-  // ✅ Fetch schedules
+  // Fetch schedules
   const fetchSchedules = async () => {
     try {
       const response = await api.get("/reschedules");
-      setSchedules(response.data);
+
+      // FIXED: backend returns { reschedules: [...], pendingCount: X }
+      const data = response.data.reschedules ?? [];
+
+      // Ensure array
+      setSchedules(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("Error fetching schedules:", error.response?.data || error.message);
+      console.error(
+        "Error fetching schedules:",
+        error.response?.data || error.message
+      );
+
+      setSchedules([]); // avoid undefined
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -42,32 +51,77 @@ export default function ReSched() {
     fetchSchedules();
   }, []);
 
-  // ✅ Pull-to-refresh
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchSchedules();
   }, []);
 
-  // ✅ Filtering + Searching (now includes pickup date)
+  // Filtering
   const filteredSchedules = schedules.filter((item) => {
     const text = search.toLowerCase();
-    const matchesSearch =
+
+    return (
       item.truck?.model?.toLowerCase().includes(text) ||
       item.driver?.user?.name?.toLowerCase().includes(text) ||
       item.barangay?.name?.toLowerCase().includes(text) ||
-      item.pickup_datetime?.toLowerCase().includes(text);
-
-    const matchesFilter =
-      filter === "all" ? true : item.status.toLowerCase() === filter;
-
-    return matchesSearch && matchesFilter;
+      item.pickup_datetime?.toLowerCase().includes(text)
+    );
   });
 
-  // ✅ Render each schedule card
+  const formatPickup = (datetime) => {
+    if (!datetime) return "No pickup date";
+    const date = new Date(datetime);
+    return date.toLocaleString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: undefined,
+      hour12: true,
+    });
+  };
+
+  const renderZones = (zones) => {
+    if (!zones || zones.length === 0) return null;
+
+    const rows = [];
+    for (let i = 0; i < zones.length; i += 2) {
+      rows.push(zones.slice(i, i + 2));
+    }
+
+    return (
+      <View style={styles.zoneContainer}>
+        <Text style={styles.zoneTitle}>Zones</Text>
+        {rows.map((row, index) => (
+          <View key={index} style={styles.zoneRow}>
+            {row.map((zone) => (
+              <View key={zone.id} style={styles.zoneCell}>
+                <MaterialIcons
+                  name="map"
+                  size={16}
+                  color="#065f46"
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.zoneText}>{zone.name}</Text>
+              </View>
+            ))}
+            {row.length === 1 && (
+              <View style={[styles.zoneCell, { opacity: 0 }]} />
+            )}
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   const renderItem = ({ item }) => (
     <TouchableOpacity
       activeOpacity={0.9}
-      style={styles.card}
+      style={[
+        styles.card,
+        item.status === "completed" && { opacity: 0.75 },
+        item.status === "inactive" && { backgroundColor: "#fff4f4" },
+      ]}
       onPress={() =>
         navigation.navigate("ReschedDetails", {
           rescheduleId: item.id,
@@ -77,9 +131,10 @@ export default function ReSched() {
     >
       <View style={styles.cardHeader}>
         <View style={styles.rowCenter}>
-          <MaterialIcons name="local-shipping" size={22} color="#1B5E20" />
+          <MaterialIcons name="local-shipping" size={22} color="#065f46" />
           <Text style={styles.truckText}>{item.truck?.model || "N/A"}</Text>
         </View>
+
         <View
           style={[
             styles.statusBadge,
@@ -106,24 +161,29 @@ export default function ReSched() {
 
       <View style={styles.infoRow}>
         <MaterialIcons name="location-city" size={18} color="#2E7D32" />
-        <Text style={styles.infoText}>{item.barangay?.name || "No barangay"}</Text>
+        <Text style={styles.infoText}>
+          {item.barangay?.name || "No barangay"}
+        </Text>
       </View>
 
       <View style={styles.infoRow}>
         <MaterialIcons name="access-time" size={18} color="#2E7D32" />
-        <Text style={styles.infoText}>Pickup: {item.pickup_datetime}</Text>
+        <Text style={styles.infoText}>
+          Pickup: {formatPickup(item.pickup_datetime)}
+        </Text>
       </View>
 
-      {item.remarks ? (
+      {item.remarks && (
         <View style={styles.infoRow}>
           <MaterialIcons name="notes" size={18} color="#2E7D32" />
           <Text style={styles.remarksText}>{item.remarks}</Text>
         </View>
-      ) : null}
+      )}
+
+      {renderZones(item.zones)}
     </TouchableOpacity>
   );
 
-  // ✅ Loading state
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -135,7 +195,6 @@ export default function ReSched() {
     );
   }
 
-  // ✅ Main layout
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar
@@ -145,35 +204,18 @@ export default function ReSched() {
       <View style={styles.container}>
         <Text style={styles.headerTitle}>Reschedule List</Text>
 
+        <Text style={styles.description}>
+          View all rescheduled waste collection schedules below. Tap a schedule
+          to see detailed route information and zone assignments.
+        </Text>
+
         <TextInput
           style={styles.searchBar}
-          placeholder="Search by pickup date"
+          placeholder="Search schedules..."
           placeholderTextColor="#4E7D4A"
           value={search}
           onChangeText={setSearch}
         />
-
-        <View style={styles.filterRow}>
-          {["all", "pending", "completed"].map((status) => (
-            <TouchableOpacity
-              key={status}
-              style={[
-                styles.filterButton,
-                filter === status && styles.filterButtonActive,
-              ]}
-              onPress={() => setFilter(status)}
-            >
-              <Text
-                style={[
-                  styles.filterText,
-                  filter === status && styles.filterTextActive,
-                ]}
-              >
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
 
         <FlatList
           data={filteredSchedules}
@@ -206,10 +248,16 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 26,
     fontWeight: "800",
-    marginBottom: 14,
+    marginBottom: 8,
     color: "#1B5E20",
     textAlign: "center",
-    letterSpacing: 0.5,
+  },
+  description: {
+    fontSize: 15,
+    color: "#4b5563",
+    marginBottom: 16,
+    textAlign: "center",
+    lineHeight: 20,
   },
   searchBar: {
     backgroundColor: "#FFFFFF",
@@ -220,72 +268,43 @@ const styles = StyleSheet.create({
     color: "#1B5E20",
     borderWidth: 1,
     borderColor: "#C8E6C9",
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
     marginBottom: 16,
-  },
-  filterRow: {
-    flexDirection: "row",
-    justifyContent: "space-evenly",
-    marginBottom: 12,
-  },
-  filterButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 25,
-    backgroundColor: "#E8F5E9",
-    borderWidth: 1,
-    borderColor: "#A5D6A7",
-  },
-  filterButtonActive: {
-    backgroundColor: "#1B5E20",
-    borderColor: "#1B5E20",
-  },
-  filterText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1B5E20",
-  },
-  filterTextActive: {
-    color: "#FFFFFF",
   },
   listContent: {
     paddingBottom: 24,
   },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 18,
-    marginVertical: 8,
-    borderWidth: 1,
-    borderColor: "#E0F2F1",
+    backgroundColor: "#ffffff",
+    borderRadius: 22,
+    padding: 22,
+    marginVertical: 12,
     shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    borderLeftWidth: 5,
+    borderLeftColor: "#15803d",
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 12,
   },
   rowCenter: {
     flexDirection: "row",
     alignItems: "center",
   },
+  truckText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#065f46",
+    marginLeft: 8,
+  },
   infoRow: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 4,
-  },
-  truckText: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#1B5E20",
-    marginLeft: 6,
   },
   statusBadge: {
     paddingHorizontal: 14,
@@ -296,7 +315,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "600",
     textTransform: "capitalize",
-    fontSize: 13,
   },
   infoText: {
     fontSize: 14,
@@ -308,6 +326,37 @@ const styles = StyleSheet.create({
     color: "#2E7D32",
     fontStyle: "italic",
     marginLeft: 6,
+  },
+  zoneContainer: {
+    marginTop: 12,
+    backgroundColor: "#E8F5E9",
+    padding: 10,
+    borderRadius: 12,
+  },
+  zoneTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#065f46",
+    marginBottom: 6,
+  },
+  zoneRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  zoneCell: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "48%",
+    backgroundColor: "#dcfce7",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+  },
+  zoneText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#065f46",
   },
   loader: {
     flex: 1,

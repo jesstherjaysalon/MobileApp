@@ -22,6 +22,8 @@ import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import dayjs from "dayjs";
 import api from "../api";
+import { DashboardModalContent } from "../modals/DashboardModal";
+
 
 const HomePage = () => {
   const [user, setUser] = useState(null);
@@ -33,10 +35,13 @@ const HomePage = () => {
   const [missedSegments, setMissedSegments] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
+  const [dashboardModalVisible, setDashboardModalVisible] = useState(false); // ✅ Dashboard modal
   const [expandedGroup, setExpandedGroup] = useState(null);
   const [selectedSegments, setSelectedSegments] = useState([]);
   const navigation = useNavigation();
   const mapRef = useRef(null);
+    const [showTooltip, setShowTooltip] = useState(true);
+
 
   // ✅ Load user and missed segments when screen is focused
   useFocusEffect(
@@ -88,52 +93,52 @@ const HomePage = () => {
   };
 
   // ✅ Retrieve selected segments with confirmation
-const handleRetrieveSelected = async () => {
-  if (selectedSegments.length === 0) {
-    Alert.alert("No Selection", "Please select at least one segment.");
-    return;
-  }
+  const handleRetrieveSelected = async () => {
+    if (selectedSegments.length === 0) {
+      Alert.alert("No Selection", "Please select at least one segment.");
+      return;
+    }
 
-  Alert.alert(
-    "Confirm Retrieval",
-    `Are you sure you want to retrieve ${selectedSegments.length} missed segment(s)?`,
-    [
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-      {
-        text: "Confirm",
-        style: "default",
-        onPress: async () => {
-          try {
-            console.log("Retrieving segments:", selectedSegments);
-
-            // ✅ You no longer need to send truck_id
-            await api.post("/retrieve-segments", {
-              leg_ids: selectedSegments,
-            });
-
-            Alert.alert(
-              "Success",
-              "Selected missed segments retrieved successfully."
-            );
-            setSelectedSegments([]);
-            setModalVisible(false);
-            await fetchMissedSegments(user?.id);
-          } catch (err) {
-            console.log("Retrieve error:", err.response?.data || err.message);
-            Alert.alert(
-              "Error",
-              err.response?.data?.error ||
-                "Failed to retrieve selected segments."
-            );
-          }
+    Alert.alert(
+      "Confirm Retrieval",
+      `Are you sure you want to retrieve ${selectedSegments.length} missed segment(s)?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
         },
-      },
-    ]
-  );
-};
+        {
+          text: "Confirm",
+          style: "default",
+          onPress: async () => {
+            try {
+              console.log("Retrieving segments:", selectedSegments);
+
+              // ✅ You no longer need to send truck_id
+              await api.post("/retrieve-segments", {
+                leg_ids: selectedSegments,
+              });
+
+              Alert.alert(
+                "Success",
+                "Selected missed segments retrieved successfully."
+              );
+              setSelectedSegments([]);
+              setModalVisible(false);
+              await fetchMissedSegments(user?.id);
+            } catch (err) {
+              console.log("Retrieve error:", err.response?.data || err.message);
+              Alert.alert(
+                "Error",
+                err.response?.data?.error ||
+                "Failed to retrieve selected segments."
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
 
 
   // ✅ GPS & Network Watchers
@@ -225,16 +230,44 @@ const handleRetrieveSelected = async () => {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.headerContainer}>
-          <View style={styles.headerTop}>
-            <View style={styles.headerBar}>
-              <MaterialIcons name="dashboard" size={30} color="#fff" />
-              <Text style={styles.headerTitle}>Driver Dashboard</Text>
-            </View>
+    {/* Header */}
+<View style={styles.headerContainer}>
+  <View style={styles.headerTop}>
+    <View style={styles.headerBar}>
+      {/* Dashboard Icon with Tooltip */}
+      <View style={{ alignItems: "center" }}>
+        <TouchableOpacity onPress={() => setDashboardModalVisible(true)}>
+          <MaterialIcons name="dashboard" size={30} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Tooltip message above the icon */}
+        {showTooltip && (  // state to control tooltip visibility
+          <View style={styles.tooltipContainer}>
+            <Text style={styles.tooltipText}>Please click here for key features</Text>
+
+            {/* Close Button */}
+            <TouchableOpacity
+              style={styles.tooltipCloseButton}
+              onPress={() => setShowTooltip(false)}
+            >
+              <Text style={styles.tooltipCloseText}>×</Text>
+            </TouchableOpacity>
+
+            {/* Arrow pointing down to icon */}
+            <View style={styles.tooltipArrow} />
+          </View>
+        )}
+      </View>
+
+      {/* Header Title */}
+      <Text style={styles.headerTitle}>Driver Dashboard</Text>
+    </View>
+ 
+
+
 
             <TouchableOpacity style={styles.notificationButton} onPress={handleNotificationPress}>
-              <MaterialIcons name="notifications" size={28} color="#fff" />
+              <MaterialIcons name="flag" size={28} color="yellow" />
               {unreadCount > 0 && (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{unreadCount}</Text>
@@ -337,11 +370,11 @@ const handleRetrieveSelected = async () => {
           </View>
         </View>
 
-        {/* Logout */}
+        {/* Logout
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <MaterialIcons name="logout" size={22} color="#fff" />
           <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </ScrollView>
 
       {/* 🔔 Modal for Missed Segments */}
@@ -397,43 +430,54 @@ const handleRetrieveSelected = async () => {
                         </View>
                       </View>
 
-                      {expandedGroup === scheduleId &&
-                        segments.map((item) => (
-                          <TouchableOpacity
-                            key={item.id}
-                            style={[
-                              styles.missedItem,
-                              selectedSegments.includes(item.id) && {
-                                backgroundColor: "#E8F5E9",
-                                borderColor: "#27AE60",
-                              },
-                            ]}
-                            onPress={() => toggleSegmentSelection(item.id)}
-                          >
-                            <MaterialIcons
-                              name={
-                                selectedSegments.includes(item.id)
-                                  ? "check-box"
-                                  : "check-box-outline-blank"
-                              }
-                              color={
-                                selectedSegments.includes(item.id)
-                                  ? "#27AE60"
-                                  : "#aaa"
-                              }
-                              size={22}
-                            />
-                            <Text style={styles.missedText}>
-                              {`${item.from_zone?.name || ""}${item.from_terminal
-                                ? ": " + item.from_terminal.name
-                                : ""
-                                } ➜ ${item.to_zone?.name || ""}${item.to_terminal
-                                  ? ": " + item.to_terminal.name
-                                  : ""
-                                }`}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
+                    {expandedGroup === scheduleId &&
+  segments.map((item) => (
+    <TouchableOpacity
+      key={item.id}
+      style={[
+        styles.missedItem,
+        selectedSegments.includes(item.id) && {
+          backgroundColor: "#E8F5E9",
+          borderColor: "#27AE60",
+        },
+      ]}
+      onPress={() => toggleSegmentSelection(item.id)}
+    >
+      <MaterialIcons
+        name={
+          selectedSegments.includes(item.id)
+            ? "check-box"
+            : "check-box-outline-blank"
+        }
+        color={
+          selectedSegments.includes(item.id)
+            ? "#27AE60"
+            : "#aaa"
+        }
+        size={22}
+      />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.missedText}>
+          {`${item.from_zone?.name || ""}${item.from_terminal
+            ? ": " + item.from_terminal.name
+            : ""
+            } ➜ ${item.to_zone?.name || ""}${item.to_terminal
+              ? ": " + item.to_terminal.name
+              : ""
+            }`}
+        </Text>
+
+        {/* Remarks for this segment */}
+        {item.remarks ? (
+          <Text style={styles.remarksText}>
+            <Text style={{ fontWeight: "600" }}>Remarks:</Text> {item.remarks}
+          </Text>
+        ) : null}
+      </View>
+    </TouchableOpacity>
+  ))}
+
+                       
                     </View>
                   );
                 })}
@@ -465,11 +509,69 @@ const handleRetrieveSelected = async () => {
           </View>
         </View>
       </Modal>
+
+
+      {/* 📊 Dashboard Modal */}
+      <Modal
+        visible={dashboardModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setDashboardModalVisible(false)}
+      >
+        <View style={dashboardStyles.backdrop}>
+        
+            {/* Dashboard Content */}
+            <DashboardModalContent />
+
+            {/* Close Button */}
+            <TouchableOpacity
+              onPress={() => setDashboardModalVisible(false)}
+            >
+              <Text style={dashboardStyles.closeText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        
+      </Modal>
+
+
     </SafeAreaView>
   );
 };
 
 export default HomePage;
+
+const dashboardStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  modalContainer: {
+    width: "90%",
+    maxHeight: "80%",
+    backgroundColor: "#f0f9f4",
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  closeBtn: {
+    marginTop: 20,
+    backgroundColor: "#27AE60",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  closeText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
+  },
+});
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#f0f9f4" },
@@ -480,6 +582,7 @@ const styles = StyleSheet.create({
     padding: 22,
     marginBottom: 18,
   },
+  closeText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   headerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   headerBar: { flexDirection: "row", alignItems: "center", gap: 10 },
   notificationButton: { position: "relative", padding: 5 },
@@ -675,4 +778,49 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 16,
   },
+  remarksText: {
+  fontSize: 12,
+  color: "#555",
+  marginTop: 2,
+  marginLeft: 28, // slightly indented
+},
+tooltipContainer: {
+  position: "absolute",
+  left: 40, // distance from icon (adjust as needed)
+  top: 0,   // vertical alignment relative to icon
+  backgroundColor: "rgba(0,0,0,0.8)",
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 8,
+  flexDirection: "row", // horizontal layout
+  alignItems: "center",
+  zIndex: 10,
+  minWidth: 180,
+},
+tooltipText: {
+  color: "#fff",
+  fontSize: 12,
+  textAlign: "left",
+},
+tooltipArrow: {
+  width: 0,
+  height: 0,
+  borderTopWidth: 6,
+  borderBottomWidth: 6,
+  borderLeftWidth: 6, // arrow pointing left
+  borderTopColor: "transparent",
+  borderBottomColor: "transparent",
+  borderLeftColor: "rgba(0,0,0,0.8)",
+  marginRight: 6,
+},
+tooltipCloseButton: {
+  marginLeft: 10,
+  padding: 2,
+},
+tooltipCloseText: {
+  color: "#fff",
+  fontSize: 14,
+  fontWeight: "bold",
+},
+
 });

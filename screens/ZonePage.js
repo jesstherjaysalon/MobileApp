@@ -411,7 +411,6 @@ const styles = StyleSheet.create({
     right: 0,
     width: width,
     height: "100%",
-    backgroundColor: "rgba(0,0,0,0.1)",
     zIndex: 999,
   },
   dropdownMenu: {

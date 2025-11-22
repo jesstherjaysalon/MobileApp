@@ -55,40 +55,36 @@ export default function ReschedDetails() {
     fetchDetails();
   }, [rescheduleId]);
 
- const handleStartRoute = async () => {
-  if (!details || details.length === 0) {
-    Alert.alert("Error", "No reschedule details available to start");
-    return;
-  }
+  const handleStartRoute = async () => {
+    if (!details || details.length === 0) {
+      Alert.alert("Error", "No reschedule details available to start");
+      return;
+    }
 
-  try {
-    const firstSegment = details[0];
-    const payload = { start_time: new Date().toISOString() };
+    try {
+      const firstSegment = details[0];
+      const payload = { start_time: new Date().toISOString() };
 
-    // ✅ Start the first segment immediately
-    await api.patch(`/resched-details/${firstSegment.id}/status`, payload);
+      await api.patch(`/resched-details/${firstSegment.id}/status`, payload);
 
-    // ✅ Optional local update
-    const updated = [...details];
-    updated[0] = { ...firstSegment, start_time: payload.start_time };
-    setDetails(updated);
+      const updated = [...details];
+      updated[0] = { ...firstSegment, start_time: payload.start_time };
+      setDetails(updated);
 
-    // ✅ Prepare map coordinates
-    const coordinates = details.map((d) => [Number(d.from_lng), Number(d.from_lat)]);
-    const last = details[details.length - 1];
-    coordinates.push([Number(last.to_lng), Number(last.to_lat)]);
+      const coordinates = details.map((d) => [Number(d.from_lng), Number(d.from_lat)]);
+      const last = details[details.length - 1];
+      coordinates.push([Number(last.to_lng), Number(last.to_lat)]);
 
-    // ✅ Navigate after update
-    navigation.navigate("ReschedProgress", {
-      rescheduleId,
-      truckId,
-      coordinates,
-    });
-  } catch (err) {
-    console.error("❌ Failed to start route:", err.response?.data || err.message);
-    Alert.alert("Error", "Failed to start the first segment");
-  }
-};
+      navigation.navigate("ReschedProgress", {
+        rescheduleId,
+        truckId,
+        coordinates,
+      });
+    } catch (err) {
+      console.error("❌ Failed to start route:", err.response?.data || err.message);
+      Alert.alert("Error", "Failed to start the first segment");
+    }
+  };
 
   if (loading)
     return (
@@ -125,43 +121,54 @@ export default function ReschedDetails() {
       <View style={styles.summaryCard}>
         <Icon name="map-marker-distance" size={28} color="#166534" />
         <Text style={styles.summaryLabel}>Total Distance</Text>
-        <Text style={styles.summaryValue}>
-          {totalDistance.toFixed(2)} km
-        </Text>
+        <Text style={styles.summaryValue}>{totalDistance.toFixed(2)} km</Text>
       </View>
       <View style={styles.summaryCard}>
         <Icon name="clock-outline" size={28} color="#166534" />
         <Text style={styles.summaryLabel}>Total Duration</Text>
-        <Text style={styles.summaryValue}>
-          {Math.round(totalDuration)} min
-        </Text>
+        <Text style={styles.summaryValue}>{Math.round(totalDuration)} min</Text>
       </View>
     </View>
   );
 
   const renderSegment = ({ item }) => (
     <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>
-          {item.from_label} → {item.to_label}
-        </Text>
-        <Text style={[styles.status, getStatusStyle(item.status)]}>
-          {item.status}
-        </Text>
-      </View>
-
       <View style={styles.cardBody}>
-        <View style={styles.row}>
-          <Text style={styles.label}>Distance</Text>
-          <Text style={styles.value}>{item.distance_km} km</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.label}>Duration</Text>
-          <Text style={styles.value}>{item.duration_min} min</Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.label}>Speed</Text>
-          <Text style={styles.value}>{item.speed_kmh} km/h</Text>
+        <View style={styles.routeRow}>
+          <View style={styles.iconsColumn}>
+            <Icon name="map-marker-circle" size={24} color="#16a34a" />
+            <View style={styles.verticalLine} />
+            <Icon name="flag-checkered" size={24} color="#dc2626" />
+          </View>
+
+          <View style={styles.detailsColumn}>
+            <View style={styles.detailRow}>
+              <Text style={styles.label}>From</Text>
+              <Text style={styles.value}>{item.from_label}</Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={styles.label}>To</Text>
+              <Text style={styles.value}>{item.to_label}</Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={styles.label}>Distance</Text>
+              <Text style={styles.value}>{item.distance_km} km</Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={styles.label}>Duration</Text>
+              <Text style={styles.value}>{item.duration_min} min</Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={styles.label}>Speed</Text>
+              <Text style={styles.value}>{item.speed_kmh} km/h</Text>
+            </View>
+            <View style={[styles.detailRow, { marginTop: 8 }]}>
+              <Text style={styles.label}>Status</Text>
+              <Text style={[styles.status, getStatusStyle(item.status)]}>
+                {item.status}
+              </Text>
+            </View>
+          </View>
         </View>
       </View>
     </View>
@@ -180,15 +187,8 @@ export default function ReschedDetails() {
             style={styles.header}
           >
             <View style={styles.headerContent}>
-              <Icon
-                name="calendar-refresh"
-                size={30}
-                color="#fff"
-                style={{ marginBottom: 8 }}
-              />
-              <Text style={styles.headerTitle}>
-                Reschedule #{rescheduleId}
-              </Text>
+              <Icon name="calendar-refresh" size={30} color="#fff" style={{ marginBottom: 8 }} />
+              <Text style={styles.headerTitle}>Reschedule #{rescheduleId}</Text>
               <Text style={styles.headerSubtitle}>Truck #{truckId}</Text>
             </View>
           </LinearGradient>
@@ -209,7 +209,6 @@ export default function ReschedDetails() {
           )}
         </ScrollView>
 
-        {/* ✅ Fixed bottom button */}
         <SafeAreaView edges={["bottom"]} style={styles.bottomButtonContainer}>
           {isCompleted ? (
             <View style={[styles.fab, { backgroundColor: "#22c55e" }]}>
@@ -229,9 +228,7 @@ export default function ReschedDetails() {
           ) : (
             <View style={[styles.fab, { backgroundColor: "#facc15" }]}>
               <Icon name="alert-circle-outline" size={24} color="#000" />
-              <Text style={[styles.fabText, { color: "#000" }]}>
-                No Segments
-              </Text>
+              <Text style={[styles.fabText, { color: "#000" }]}>No Segments</Text>
             </View>
           )}
         </SafeAreaView>
@@ -295,19 +292,14 @@ const styles = StyleSheet.create({
     elevation: 3,
     padding: 16,
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: "#14532d" },
-  cardBody: { marginTop: 8 },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginVertical: 4,
-  },
+  cardBody: { marginTop: 0 },
+
+  routeRow: { flexDirection: "row", gap: 12 },
+  iconsColumn: { alignItems: "center", width: 40 },
+  verticalLine: { width: 2, flex: 1, backgroundColor: "#94a3b8", marginVertical: 4 },
+  detailsColumn: { flex: 1 },
+  detailRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 2 },
+
   label: { fontSize: 14, color: "#166534" },
   value: { fontSize: 14, fontWeight: "600", color: "#14532d" },
 

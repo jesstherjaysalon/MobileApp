@@ -82,7 +82,7 @@ export default function DriverProfile({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header with gradient */}
+      {/* Gradient Header */}
       <LinearGradient colors={["#2E7D32", "#1B5E20"]} style={styles.header}>
         <Animatable.View
           animation="bounceIn"
@@ -163,15 +163,20 @@ const InfoRow = ({ icon, label, value, color = "#2E7D32" }) => (
 );
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#E8F5E9" }, // 🌿 Light green background
+  container: { flex: 1, backgroundColor: "#E8F5E9" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
 
   header: {
-    padding: 30,
+    paddingTop: 50,
+    paddingBottom: 30,
     alignItems: "center",
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
     elevation: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
   },
   avatar: {
     width: 100,
@@ -180,23 +185,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 14,
+    marginBottom: 12,
     shadowColor: "#000",
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 6,
     elevation: 6,
   },
   avatarText: { fontSize: 34, fontWeight: "700", color: "#2E7D32" },
-  headerName: { fontSize: 24, fontWeight: "800", color: "#fff" },
+  headerName: { fontSize: 24, fontWeight: "800", color: "#fff", marginTop: 4 },
   headerEmail: { fontSize: 14, color: "#c8e6c9", marginTop: 4 },
 
-  scrollContent: { padding: 16, paddingBottom: 100 },
+  scrollContent: { padding: 16, paddingBottom: 120 },
 
-  // 🌿 Softer modern card with deep green border
   card: {
-    backgroundColor: "#F1F8E9", // soft light green
+    backgroundColor: "#F1F8E9",
     borderWidth: 1.5,
-    borderColor: "#1B5E20", // deep green border
+    borderColor: "#1B5E20",
     padding: 20,
     borderRadius: 18,
     marginTop: 18,
