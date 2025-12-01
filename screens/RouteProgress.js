@@ -41,6 +41,7 @@ const formatDuration = (minutes) => {
 function ConfirmModal({ visible, title, message, onCancel, onConfirm, loading }) {
   const scale = useRef(new Animated.Value(0.9)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     if (visible) {
       Animated.parallel([
@@ -54,6 +55,7 @@ function ConfirmModal({ visible, title, message, onCancel, onConfirm, loading })
       ]).start();
     }
   }, [visible]);
+
   return (
     <Modal visible={visible} transparent animationType="none">
       <View style={styles.modalOverlay}>
@@ -64,8 +66,16 @@ function ConfirmModal({ visible, title, message, onCancel, onConfirm, loading })
             <TouchableOpacity style={styles.confirmCancel} onPress={onCancel}>
               <Text style={styles.confirmCancelText}>Go Back</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.confirmProceed, loading && { opacity: 0.7 }]} onPress={onConfirm} disabled={loading}>
-              {loading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.confirmProceedText}>Proceed</Text>}
+            <TouchableOpacity
+              style={[styles.confirmProceed, loading && { opacity: 0.7 }]}
+              onPress={onConfirm}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.confirmProceedText}>Proceed</Text>
+              )}
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -77,6 +87,7 @@ function ConfirmModal({ visible, title, message, onCancel, onConfirm, loading })
 function PendingWarningModal({ visible, message, onClose }) {
   const scale = useRef(new Animated.Value(0.9)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     if (visible) {
       Animated.parallel([
@@ -90,6 +101,7 @@ function PendingWarningModal({ visible, message, onClose }) {
       ]).start();
     }
   }, [visible]);
+
   return (
     <Modal visible={visible} transparent animationType="none">
       <View style={styles.modalOverlay}>
@@ -97,7 +109,7 @@ function PendingWarningModal({ visible, message, onClose }) {
           <Text style={styles.confirmTitle}>Pending Segments</Text>
           <Text style={styles.confirmMessage}>{message}</Text>
           <View style={[styles.confirmButtonsRow, { justifyContent: "center" }]}>
-            <TouchableOpacity style={[styles.confirmProceed]} onPress={onClose}>
+            <TouchableOpacity style={styles.confirmProceed} onPress={onClose}>
               <Text style={styles.confirmProceedText}>Okay</Text>
             </TouchableOpacity>
           </View>
@@ -110,6 +122,7 @@ function PendingWarningModal({ visible, message, onClose }) {
 function SegmentsModal({ visible, onClose, segments, onJumpTo, focusedIndex }) {
   const translateY = useRef(new Animated.Value(40)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     if (visible) {
       Animated.parallel([
@@ -123,11 +136,24 @@ function SegmentsModal({ visible, onClose, segments, onJumpTo, focusedIndex }) {
       ]).start();
     }
   }, [visible]);
+
   const renderItem = ({ item, index }) => {
-    const statusColor = item.status === "completed" ? "#10b981" : item.status === "missed" ? "#ef4444" : "#f59e0b";
+    const statusColor =
+      item.status === "completed"
+        ? "#10b981"
+        : item.status === "missed"
+        ? "#ef4444"
+        : "#f59e0b";
     const selectedBg = index === focusedIndex ? { backgroundColor: "#fff7ed" } : {};
+
     return (
-      <TouchableOpacity style={[styles.segmentItem, selectedBg]} onPress={() => { onJumpTo(index); onClose(); }}>
+      <TouchableOpacity
+        style={[styles.segmentItem, selectedBg]}
+        onPress={() => {
+          onJumpTo(index);
+          onClose();
+        }}
+      >
         <View style={{ flex: 1 }}>
           <Text style={styles.segmentTitle}>{`#${index + 1} — ${item.from_name ?? "Unknown"}`}</Text>
           <Text style={styles.segmentSub}>{item.to_name ?? "—"}</Text>
@@ -138,6 +164,7 @@ function SegmentsModal({ visible, onClose, segments, onJumpTo, focusedIndex }) {
       </TouchableOpacity>
     );
   };
+
   return (
     <Modal visible={visible} transparent animationType="none">
       <View style={styles.modalOverlay}>
@@ -148,7 +175,12 @@ function SegmentsModal({ visible, onClose, segments, onJumpTo, focusedIndex }) {
               <Icon name="close" size={20} color="#374151" />
             </TouchableOpacity>
           </View>
-          <FlatList data={segments} keyExtractor={(it) => String(it.id ?? Math.random())} renderItem={renderItem} contentContainerStyle={{ paddingBottom: 20 }} />
+          <FlatList
+            data={segments}
+            keyExtractor={(it) => String(it.id ?? Math.random())}
+            renderItem={renderItem}
+            contentContainerStyle={{ paddingBottom: 20 }}
+          />
         </Animated.View>
       </View>
     </Modal>
@@ -169,18 +201,27 @@ export default function RouteProgressScreen({ route }) {
   const [selectedIndex, setSelectedIndex] = useState(null);
 
   const [segmentsModalVisible, setSegmentsModalVisible] = useState(false);
-  const [confirmState, setConfirmState] = useState({ visible: false, status: null, isStartOnly: false, message: "" });
-  const [finalConfirm, setFinalConfirm] = useState({ visible: false, message: "", status: null });
+  const [confirmState, setConfirmState] = useState({
+    visible: false,
+    status: null,
+    isStartOnly: false,
+    message: "",
+  });
+  const [finalConfirm, setFinalConfirm] = useState({
+    visible: false,
+    message: "",
+    status: null,
+  });
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [pendingWarningVisible, setPendingWarningVisible] = useState(false);
 
   const [wasteModalVisible, setWasteModalVisible] = useState(false);
   const [wasteModalRouteDetailId, setWasteModalRouteDetailId] = useState(null);
+  const [wasteModalTerminalId, setWasteModalTerminalId] = useState(null);
 
   const [remarksModalVisible, setRemarksModalVisible] = useState(false);
   const [remarksRouteDetailId, setRemarksRouteDetailId] = useState(null);
 
-  // NEW: track if we are waiting for waste input on the final completed segment
   const [pendingFinalCompleted, setPendingFinalCompleted] = useState(false);
   const [pendingFinalRouteDetailId, setPendingFinalRouteDetailId] = useState(null);
 
@@ -193,6 +234,18 @@ export default function RouteProgressScreen({ route }) {
         setLoading(true);
         const res = await api.get(`/route-details/${routePlanId}`);
         const segments = res.data?.routeDetails || [];
+
+        
+       console.log(
+  "ROUTE DETAILS SEGMENTS:",
+  segments.map((s, idx) => ({
+    idx,
+    id: s.id,
+    from_terminal_id: s.from_terminal_id,
+    to_terminal_id: s.to_terminal_id,
+  }))
+);
+
         if (!mounted) return;
         setRouteDetails(segments);
         const firstActive = segments.findIndex((s) => !s.status || s.status === "pending");
@@ -203,19 +256,29 @@ export default function RouteProgressScreen({ route }) {
         if (mounted) setLoading(false);
       }
     };
+
     if (routePlanId) fetchRoute();
     else setLoading(false);
-    return () => { mounted = false; };
+
+    return () => {
+      mounted = false;
+    };
   }, [routePlanId]);
 
-  const activeIndex = useMemo(() => routeDetails.findIndex((s) => !s.status || s.status === "pending"), [routeDetails]);
-  const anyPendingSegments = useMemo(() => routeDetails.some((s) => !s.status || s.status === "pending"), [routeDetails]);
-  const anyMissedSegments = useMemo(() => routeDetails.some((s) => s.status === "missed"), [routeDetails]);
+  const activeIndex = useMemo(
+    () => routeDetails.findIndex((s) => !s.status || s.status === "pending"),
+    [routeDetails]
+  );
 
-  const patchSegment = async (id, payload) => await api.patch(`/route-details/${id}/status`, payload);
+  const patchSegment = async (id, payload) =>
+    await api.patch(`/route-details/${id}/status`, payload);
 
   const completeSchedule = async () => {
-    try { await api.patch(`/garbage_schedules/${routePlanId}/complete`); } catch (err) { console.error(err); }
+    try {
+      await api.patch(`/garbage_schedules/${routePlanId}/complete`);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const advanceSegment = async (status, isStartOnly = false, remarks = null) => {
@@ -226,95 +289,108 @@ export default function RouteProgressScreen({ route }) {
       const segment = updated[index];
       if (!segment) return;
 
-      if (index !== activeIndex && !isStartOnly) { setPendingWarningVisible(true); return; }
+      if (index !== activeIndex && !isStartOnly) {
+        setPendingWarningVisible(true);
+        return;
+      }
 
       const now = moment().toISOString();
       const segPayload = {};
       if (isStartOnly) segPayload.start_time = now;
-      else { segPayload.status = status; segPayload.completed_at = now; if (status === "missed" && remarks) segPayload.remarks = remarks; }
+      else {
+        segPayload.status = status;
+        segPayload.completed_at = now;
+        if (status === "missed" && remarks) segPayload.remarks = remarks;
+      }
 
-      // persist the segment change first
       await patchSegment(segment.id, segPayload);
       updated[index] = { ...segment, ...segPayload };
 
-      // patch next start_time only for non-final segments
       if (!isStartOnly && (status === "completed" || status === "missed") && index + 1 < updated.length) {
         const nextSegment = updated[index + 1];
         const nextPayload = { start_time: segPayload.completed_at || now };
-        try { await patchSegment(nextSegment.id, nextPayload); updated[index + 1] = { ...nextSegment, ...nextPayload }; } catch (err) { updated[index + 1] = { ...nextSegment, ...nextPayload }; }
+        try {
+          await patchSegment(nextSegment.id, nextPayload);
+          updated[index + 1] = { ...nextSegment, ...nextPayload };
+        } catch (err) {
+          updated[index + 1] = { ...nextSegment, ...nextPayload };
+        }
       }
+
       setRouteDetails(updated);
 
-      // If this is not start-only and status is completed -> open waste modal for that segment (non-final too)
       if (!isStartOnly && status === "completed") {
-        // If this is the final segment in the route, we MUST collect waste before finishing the schedule.
+        const terminalId = segment.to_terminal_id; // from RouteDetails model
+
+        // Optional debug:
+        // console.log("SEGMENT ON COMPLETE:", segment);
+        // console.log("USING terminalId:", terminalId);
+
         if (index + 1 >= updated.length) {
-          // mark finished visually, but DO NOT complete schedule / navigate yet.
           setFinished(true);
           setPendingFinalCompleted(true);
           setPendingFinalRouteDetailId(segment.id);
+
           setWasteModalRouteDetailId(segment.id);
+          setWasteModalTerminalId(terminalId);
           setWasteModalVisible(true);
-          // do not call completeSchedule() or navigate here — wait until waste input saved
           return;
         } else {
-          // Non-final completed: open waste modal for optional collection input, but proceed with normal index advance.
           setWasteModalRouteDetailId(segment.id);
+          setWasteModalTerminalId(terminalId);
           setWasteModalVisible(true);
         }
       }
 
-      // If this is not start-only and status is missed
-      if (!isStartOnly && status === "missed") {
-        // If final segment missed => advanceSegment will say index + 1 >= updated.length below and handle completion
-      }
-
-      // Advance to next segment if there is one
       if (!isStartOnly && index + 1 < updated.length) {
         setCurrentIndex(index + 1);
         setSelectedIndex(null);
         setFocusedIndex(null);
       }
 
-      // If this was the final segment and is not 'completed' awaiting waste input:
-      if (!isStartOnly && index + 1 >= updated.length) {
-        // If status is missed -> finalize immediately
-        if (status === "missed") {
-          const completedCount = updated.filter((seg) => seg.status === "completed").length;
-          const missedZones = updated.filter((seg) => seg.status === "missed");
-          setFinished(true);
-          await completeSchedule();
-          navigation.replace("Home", { routePlanId, completedCount, missedZones });
-          return;
-        }
-
-        // If status was 'completed', we already returned earlier after opening waste modal for final segment
+      if (!isStartOnly && index + 1 >= updated.length && status === "missed") {
+        const completedCount = updated.filter((seg) => seg.status === "completed").length;
+        const missedZones = updated.filter((seg) => seg.status === "missed");
+        setFinished(true);
+        await completeSchedule();
+        navigation.replace("Home", { routePlanId, completedCount, missedZones });
+        return;
       }
-    } catch (err) { console.error(err); }
-    finally { setConfirmLoading(false); setConfirmState({ visible: false, status: null, isStartOnly: false, message: "" }); setFinalConfirm({ visible: false, message: "", status: null }); }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setConfirmLoading(false);
+      setConfirmState({ visible: false, status: null, isStartOnly: false, message: "" });
+      setFinalConfirm({ visible: false, message: "", status: null });
+    }
   };
 
   const confirmAdvance = (status, isStartOnly = false) => {
     const index = selectedIndex !== null ? selectedIndex : currentIndex;
-    if (index !== activeIndex && !isStartOnly) { setPendingWarningVisible(true); return; }
-    if (!isStartOnly && status === "missed") { setRemarksRouteDetailId(routeDetails[index]?.id ?? null); setRemarksModalVisible(true); return; }
+    if (index !== activeIndex && !isStartOnly) {
+      setPendingWarningVisible(true);
+      return;
+    }
+    if (!isStartOnly && status === "missed") {
+      setRemarksRouteDetailId(routeDetails[index]?.id ?? null);
+      setRemarksModalVisible(true);
+      return;
+    }
 
     let message = "";
     if (isStartOnly) message = "Do you want to start this segment now?";
     else if (status === "completed") message = "Confirm this segment as completed.";
     else if (status === "missed") message = "Mark this segment as missed?";
+
     setConfirmState({ visible: true, status, isStartOnly, message });
   };
 
-  // When remarks modal saved (missed case) -> call advanceSegment to finalize (this will navigate if final)
   const handleRemarksSaved = async ({ routeDetailId, remarks }) => {
     try {
       setRemarksModalVisible(false);
       setRemarksRouteDetailId(null);
-      // Ensure we operate on the correct segment index (find it by id in case selection changed)
       const segIndex = routeDetails.findIndex((s) => s.id === routeDetailId);
       if (segIndex !== -1) {
-        // If user was looking at another index, temporarily set selected/current to this one so the advanceSegment uses it.
         setSelectedIndex(segIndex);
         setCurrentIndex(segIndex);
       }
@@ -322,12 +398,10 @@ export default function RouteProgressScreen({ route }) {
     } catch (err) {
       console.error(err);
     } finally {
-      // clear selection after
       setSelectedIndex(null);
     }
   };
 
-  // When waste modal saved -> update the route details, and if this was the pending final completion, finish schedule and navigate
   const handleWasteSaved = async (saved) => {
     try {
       const segIndex = routeDetails.findIndex((s) => s.id === wasteModalRouteDetailId);
@@ -336,15 +410,18 @@ export default function RouteProgressScreen({ route }) {
         updated[segIndex] = { ...updated[segIndex], collection: saved };
         setRouteDetails(updated);
 
-        // If this waste save was for a final completed segment that was pending -> finish schedule & navigate now
-        if (pendingFinalCompleted && pendingFinalRouteDetailId && pendingFinalRouteDetailId === wasteModalRouteDetailId) {
-          // compute counts
+        if (
+          pendingFinalCompleted &&
+          pendingFinalRouteDetailId &&
+          pendingFinalRouteDetailId === wasteModalRouteDetailId
+        ) {
           const completedCount = updated.filter((seg) => seg.status === "completed").length;
           const missedZones = updated.filter((seg) => seg.status === "missed");
           setPendingFinalCompleted(false);
           setPendingFinalRouteDetailId(null);
           setWasteModalVisible(false);
           setWasteModalRouteDetailId(null);
+          setWasteModalTerminalId(null);
           setFinished(true);
           try {
             await completeSchedule();
@@ -354,27 +431,40 @@ export default function RouteProgressScreen({ route }) {
           navigation.replace("RouteSummary", { routePlanId, completedCount, missedZones });
           return;
         }
-
-        // Non-final: simple close and continue
       }
     } catch (err) {
       console.error(err);
     } finally {
-      // Close waste modal if not already closed above
       if (!pendingFinalCompleted) {
         setWasteModalVisible(false);
         setWasteModalRouteDetailId(null);
+        setWasteModalTerminalId(null);
       }
     }
   };
 
-  if (loading) return (<SafeAreaView style={styles.center}><ActivityIndicator size="large" color="#2563eb" /><Text style={styles.loadingText}>Loading route...</Text></SafeAreaView>);
-  if (!routeDetails.length) return (<SafeAreaView style={styles.center}><Text style={styles.emptyText}>No route details available.</Text></SafeAreaView>);
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={styles.loadingText}>Loading route...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!routeDetails.length) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <Text style={styles.emptyText}>No route details available.</Text>
+      </SafeAreaView>
+    );
+  }
 
   const visibleIndex = selectedIndex !== null ? selectedIndex : currentIndex;
   const currentSegment = routeDetails[visibleIndex] || {};
   const isActiveSegment = visibleIndex === activeIndex;
-  const alreadyFinalized = currentSegment?.status === "completed" || currentSegment?.status === "missed";
+  const alreadyFinalized =
+    currentSegment?.status === "completed" || currentSegment?.status === "missed";
   const disableStartButton = !!currentSegment?.start_time || !isActiveSegment || alreadyFinalized;
   const disableCompleteButton = alreadyFinalized || !isActiveSegment;
   const disableMissedButton = alreadyFinalized || !isActiveSegment;
@@ -385,44 +475,117 @@ export default function RouteProgressScreen({ route }) {
         segments={routeDetails}
         currentIndex={currentIndex}
         focusedIndex={focusedIndex}
-        onMarkerPress={(segment, idx) => { if (typeof idx === "number") { setSelectedIndex(idx); setCurrentIndex(idx); setFocusedIndex(idx); } }}
+        onMarkerPress={(segment, idx) => {
+          if (typeof idx === "number") {
+            setSelectedIndex(idx);
+            setCurrentIndex(idx);
+            setFocusedIndex(idx);
+          }
+        }}
       />
 
       <View style={styles.topControls} pointerEvents="box-none">
-        <TouchableOpacity style={styles.segmentsToggle} onPress={() => setSegmentsModalVisible(true)}>
+        <TouchableOpacity
+          style={styles.segmentsToggle}
+          onPress={() => setSegmentsModalVisible(true)}
+        >
           <Icon name="menu" size={20} color="#fff" />
           <Text style={styles.segmentsToggleText}>Segments</Text>
         </TouchableOpacity>
       </View>
 
       {selectedIndex !== null && (
-        <View style={[styles.card, { paddingBottom: Math.max(insets.bottom, Platform.OS === "android" ? 16 : 10) + 8 }]}>
-          <TouchableOpacity style={styles.closeButton} onPress={() => { setSelectedIndex(null); setFocusedIndex(null); }}>
+        <View
+          style={[
+            styles.card,
+            { paddingBottom: Math.max(insets.bottom, Platform.OS === "android" ? 16 : 10) + 8 },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => {
+              setSelectedIndex(null);
+              setFocusedIndex(null);
+            }}
+          >
             <Icon name="close" size={20} color="#374151" />
           </TouchableOpacity>
           <ScrollView showsVerticalScrollIndicator={false}>
-            <Text style={styles.title}>Segment {visibleIndex + 1} of {routeDetails.length}</Text>
+            <Text style={styles.title}>
+              Segment {visibleIndex + 1} of {routeDetails.length}
+            </Text>
             <View style={styles.timelineContainer}>
-              <View style={styles.timelineRow}><Icon name="location-on" size={20} color="#10b981" style={styles.icon} /><View><Text style={styles.timelineTitle}>From</Text><Text style={styles.timelineLabel}>{currentSegment.from_name ?? "-"}</Text></View></View>
+              <View style={styles.timelineRow}>
+                <Icon name="location-on" size={20} color="#10b981" style={styles.icon} />
+                <View>
+                  <Text style={styles.timelineTitle}>From</Text>
+                  <Text style={styles.timelineLabel}>{currentSegment.from_name ?? "-"}</Text>
+                </View>
+              </View>
               <View style={styles.timelineLine} />
-              <View style={styles.timelineRow}><Icon name="flag" size={20} color="#ef4444" style={styles.icon} /><View><Text style={styles.timelineTitle}>To</Text><Text style={styles.timelineLabel}>{currentSegment.to_name ?? "-"}</Text></View></View>
+              <View style={styles.timelineRow}>
+                <Icon name="flag" size={20} color="#ef4444" style={styles.icon} />
+                <View>
+                  <Text style={styles.timelineTitle}>To</Text>
+                  <Text style={styles.timelineLabel}>{currentSegment.to_name ?? "-"}</Text>
+                </View>
+              </View>
             </View>
-            <View style={styles.infoRow}><Text style={styles.infoLabel}>Distance:</Text><Text style={styles.infoValue}>{formatDistance(Number(currentSegment.distance_km || 0))}</Text></View>
-            <View style={styles.infoRow}><Text style={styles.infoLabel}>Duration:</Text><Text style={styles.infoValue}>{formatDuration(Number(currentSegment.duration_min || 0))}</Text></View>
-            <Text style={styles.footerNote}>Start and arrival times may vary. Updates will be sent automatically.</Text>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Distance:</Text>
+              <Text style={styles.infoValue}>
+                {formatDistance(Number(currentSegment.distance_km || 0))}
+              </Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Duration:</Text>
+              <Text style={styles.infoValue}>
+                {formatDuration(Number(currentSegment.duration_min || 0))}
+              </Text>
+            </View>
+            <Text style={styles.footerNote}>
+              Start and arrival times may vary. Updates will be sent automatically.
+            </Text>
             {!finished && (
               <View style={styles.buttonRow}>
                 {visibleIndex === activeIndex && !currentSegment?.start_time ? (
-                  <TouchableOpacity disabled={disableStartButton} onPress={() => confirmAdvance(null, true)} style={[styles.actionButton, styles.startButton, disableStartButton && { opacity: 0.6 }]}>
-                    <Icon name="play-arrow" size={20} color="#fff" /><Text style={styles.buttonText}>Start Segment</Text>
+                  <TouchableOpacity
+                    disabled={disableStartButton}
+                    onPress={() => confirmAdvance(null, true)}
+                    style={[
+                      styles.actionButton,
+                      styles.startButton,
+                      disableStartButton && { opacity: 0.6 },
+                    ]}
+                  >
+                    <Icon name="play-arrow" size={20} color="#fff" />
+                    <Text style={styles.buttonText}>Start Segment</Text>
                   </TouchableOpacity>
                 ) : (
                   <>
-                    <TouchableOpacity disabled={disableCompleteButton} onPress={() => confirmAdvance("completed")} style={[styles.actionButton, styles.completeButton, disableCompleteButton && { opacity: 0.6 }]}>
-                      <Icon name="check-circle" size={20} color="#fff" /><Text style={styles.buttonText}>Complete</Text>
+                    <TouchableOpacity
+                      disabled={disableCompleteButton}
+                      onPress={() => confirmAdvance("completed")}
+                      style={[
+                        styles.actionButton,
+                        styles.completeButton,
+                        disableCompleteButton && { opacity: 0.6 },
+                      ]}
+                    >
+                      <Icon name="check-circle" size={20} color="#fff" />
+                      <Text style={styles.buttonText}>Complete</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity disabled={disableMissedButton} onPress={() => confirmAdvance("missed")} style={[styles.actionButton, styles.missedButton, disableMissedButton && { opacity: 0.6 }]}>
-                      <Icon name="cancel" size={20} color="#fff" /><Text style={styles.buttonText}>Missed</Text>
+                    <TouchableOpacity
+                      disabled={disableMissedButton}
+                      onPress={() => confirmAdvance("missed")}
+                      style={[
+                        styles.actionButton,
+                        styles.missedButton,
+                        disableMissedButton && { opacity: 0.6 },
+                      ]}
+                    >
+                      <Icon name="cancel" size={20} color="#fff" />
+                      <Text style={styles.buttonText}>Missed</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -432,38 +595,81 @@ export default function RouteProgressScreen({ route }) {
         </View>
       )}
 
-      <SegmentsModal visible={segmentsModalVisible} onClose={() => setSegmentsModalVisible(false)} segments={routeDetails} focusedIndex={focusedIndex} onJumpTo={(idx) => { setSelectedIndex(idx); setCurrentIndex(idx); setFocusedIndex(idx); }} />
+      <SegmentsModal
+        visible={segmentsModalVisible}
+        onClose={() => setSegmentsModalVisible(false)}
+        segments={routeDetails}
+        focusedIndex={focusedIndex}
+        onJumpTo={(idx) => {
+          setSelectedIndex(idx);
+          setCurrentIndex(idx);
+          setFocusedIndex(idx);
+        }}
+      />
 
-      <ConfirmModal visible={!!confirmState.visible} title={confirmState.isStartOnly ? "Start Segment" : confirmState.status === "completed" ? "Complete Segment" : "Mark as Missed"} message={confirmState.message} loading={confirmLoading} onCancel={() => setConfirmState({ visible: false, status: null, isStartOnly: false, message: "" })} onConfirm={() => advanceSegment(confirmState.status, confirmState.isStartOnly)} />
-      <ConfirmModal visible={!!finalConfirm.visible} title={"Finish Route"} message={finalConfirm.message} loading={confirmLoading} onCancel={() => setFinalConfirm({ visible: false, message: "", status: null })} onConfirm={() => advanceSegment(finalConfirm.status, false)} />
-      <PendingWarningModal visible={pendingWarningVisible} message={"There are still pending segments. You must finish all before completing the route."} onClose={() => setPendingWarningVisible(false)} />
+      <ConfirmModal
+        visible={!!confirmState.visible}
+        title={
+          confirmState.isStartOnly
+            ? "Start Segment"
+            : confirmState.status === "completed"
+            ? "Complete Segment"
+            : "Mark as Missed"
+        }
+        message={confirmState.message}
+        loading={confirmLoading}
+        onCancel={() =>
+          setConfirmState({ visible: false, status: null, isStartOnly: false, message: "" })
+        }
+        onConfirm={() => advanceSegment(confirmState.status, confirmState.isStartOnly)}
+      />
+      <ConfirmModal
+        visible={!!finalConfirm.visible}
+        title="Finish Route"
+        message={finalConfirm.message}
+        loading={confirmLoading}
+        onCancel={() => setFinalConfirm({ visible: false, message: "", status: null })}
+        onConfirm={() => advanceSegment(finalConfirm.status, false)}
+      />
+      <PendingWarningModal
+        visible={pendingWarningVisible}
+        message="There are still pending segments. You must finish all before completing the route."
+        onClose={() => setPendingWarningVisible(false)}
+      />
 
       <WasteInputModal
         visible={wasteModalVisible}
         onClose={() => {
-          // If we closed waste modal and it was pending final, we should clear pending final and allow user to continue
           if (pendingFinalCompleted && pendingFinalRouteDetailId === wasteModalRouteDetailId) {
             setPendingFinalCompleted(false);
             setPendingFinalRouteDetailId(null);
             setWasteModalRouteDetailId(null);
+            setWasteModalTerminalId(null);
             setWasteModalVisible(false);
-            // optionally show a message that final completion is required to finish — keeping UX simple, we just close.
             return;
           }
           setWasteModalVisible(false);
           setWasteModalRouteDetailId(null);
+          setWasteModalTerminalId(null);
         }}
         routeDetailId={wasteModalRouteDetailId}
-        onSaved={(saved) => handleWasteSaved(saved)}
+        terminalId={wasteModalTerminalId}
+        onSaved={handleWasteSaved}
       />
-      <RemarksModal visible={remarksModalVisible} onClose={() => { setRemarksModalVisible(false); setRemarksRouteDetailId(null); }} routeDetailId={remarksRouteDetailId} onSaved={(payload) => handleRemarksSaved(payload)} />
+      <RemarksModal
+        visible={remarksModalVisible}
+        onClose={() => {
+          setRemarksModalVisible(false);
+          setRemarksRouteDetailId(null);
+        }}
+        routeDetailId={remarksRouteDetailId}
+        onSaved={handleRemarksSaved}
+      />
     </SafeAreaView>
   );
 }
 
-
 /* ---------------------- styles ---------------------- */
-/* (same styles as your original file) */
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#f8fafc" },
   center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f9fafb" },
@@ -551,7 +757,6 @@ const styles = StyleSheet.create({
   missedButton: { backgroundColor: "#ef4444" },
   buttonText: { color: "#fff", fontWeight: "700", marginLeft: 6 },
 
-  // Modal styles (Confirm and Segments)
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(2,6,23,0.55)",
@@ -566,16 +771,28 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     elevation: 12,
   },
-  segmentsHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  segmentsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
   segmentsHeaderTitle: { fontSize: 16, fontWeight: "800", color: "#0f172a" },
   segmentsCloseBtn: { padding: 6, borderRadius: 12, backgroundColor: "#f3f4f6" },
-  segmentItem: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 10, borderRadius: 12, marginVertical: 6, backgroundColor: "#fff" },
+  segmentItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    marginVertical: 6,
+    backgroundColor: "#fff",
+  },
   segmentTitle: { fontWeight: "700", color: "#0f172a" },
   segmentSub: { color: "#6b7280", marginTop: 4 },
   segmentBadge: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999 },
   segmentBadgeText: { color: "#fff", fontWeight: "700" },
 
-  // Confirm card styles
   confirmCard: {
     marginHorizontal: 24,
     marginBottom: 80,
@@ -590,6 +807,11 @@ const styles = StyleSheet.create({
   confirmButtonsRow: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
   confirmCancel: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, marginRight: 8 },
   confirmCancelText: { color: "#374151", fontWeight: "700" },
-  confirmProceed: { backgroundColor: "#111827", paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10 },
+  confirmProceed: {
+    backgroundColor: "#111827",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
   confirmProceedText: { color: "#fff", fontWeight: "800" },
 });

@@ -12,11 +12,20 @@ import {
   StyleSheet,
 } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
-import api from "../api"; // your existing axios helper
+import api from "../api";
 
-export default function WasteInputModal({ visible, onClose, routeDetailId, onSaved }) {
+export default function WasteInputModal({
+  visible,
+  onClose,
+  routeDetailId,
+  terminalId,
+  onSaved,
+}) {
   const scale = useRef(new Animated.Value(0.9)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+
+  const [terminalInfo, setTerminalInfo] = useState(null);
+  const [loadingTerminal, setLoadingTerminal] = useState(false);
 
   const [biodegradable, setBiodegradable] = useState("");
   const [nonBiodegradable, setNonBiodegradable] = useState("");
@@ -44,73 +53,95 @@ export default function WasteInputModal({ visible, onClose, routeDetailId, onSav
       setNonBiodegradable("");
       setRecyclable("");
       setSubmitting(false);
+      setTerminalInfo(null);
     }
   }, [visible]);
 
-  const total = useMemo(() => {
-    const a = Number(biodegradable || 0);
-    const b = Number(nonBiodegradable || 0);
-    const c = Number(recyclable || 0);
-    return a + b + c;
-  }, [biodegradable, nonBiodegradable, recyclable]);
+  // LOAD TERMINAL INFO
+  useEffect(() => {
+    if (visible && terminalId) {
+      console.log("📌 Fetching terminal info for ID:", terminalId);
+      loadTerminalInfo();
+    } else {
+      console.log("❗ No terminalId received:", terminalId);
+    }
+  }, [visible, terminalId]);
+
+  const loadTerminalInfo = async () => {
+    try {
+      setLoadingTerminal(true);
+      const res = await api.get(`/garbage-terminals/${terminalId}`);
+
+      console.log("📌 Terminal API Response:", res.data);
+
+      const t = res.data.data;
+      setTerminalInfo(t);
+
+      // Prefill inputs with estimated values if available
+      if (t) {
+        setBiodegradable(
+          t.estimated_biodegradable != null ? String(t.estimated_biodegradable) : ""
+        );
+        setNonBiodegradable(
+          t.estimated_non_biodegradable != null ? String(t.estimated_non_biodegradable) : ""
+        );
+        setRecyclable(
+          t.estimated_recyclable != null ? String(t.estimated_recyclable) : ""
+        );
+      }
+    } catch (err) {
+      console.log("❌ Failed to load terminal:", err.response?.data || err);
+      Alert.alert("Error", "Unable to load terminal information.");
+    } finally {
+      setLoadingTerminal(false);
+    }
+  };
+
+  const total = useMemo(
+    () =>
+      Number(biodegradable || 0) +
+      Number(nonBiodegradable || 0) +
+      Number(recyclable || 0),
+    [biodegradable, nonBiodegradable, recyclable]
+  );
 
   const validateInputs = () => {
-    const parsedBio = parseInt(biodegradable || "0", 10);
-    const parsedNon = parseInt(nonBiodegradable || "0", 10);
-    const parsedRec = parseInt(recyclable || "0", 10);
+    const parsed = (x) => Number(x || 0);
 
-    if (isNaN(parsedBio) || parsedBio < 0) {
-      Alert.alert("Validation", "Biodegradable must be 0 or a positive integer.");
+    if (parsed(biodegradable) < 0) {
+      Alert.alert("Validation", "Biodegradable must be 0 or above.");
       return false;
     }
-    if (isNaN(parsedNon) || parsedNon < 0) {
-      Alert.alert("Validation", "Non-biodegradable must be 0 or a positive integer.");
+    if (parsed(nonBiodegradable) < 0) {
+      Alert.alert("Validation", "Non-biodegradable must be 0 or above.");
       return false;
     }
-    if (isNaN(parsedRec) || parsedRec < 0) {
-      Alert.alert("Validation", "Recyclable must be 0 or a positive integer.");
+    if (parsed(recyclable) < 0) {
+      Alert.alert("Validation", "Recyclable must be 0 or above.");
       return false;
     }
-
-    if (parsedBio + parsedNon + parsedRec <= 0) {
-      Alert.alert("Validation", "Please enter at least one sack collected.");
-      return false;
-    }
-
     return true;
   };
 
   const handleSave = async () => {
     if (!validateInputs()) return;
-    if (!routeDetailId) {
-      Alert.alert("Error", "Missing route_detail_id.");
-      return;
-    }
 
     setSubmitting(true);
 
     const payload = {
       route_detail_id: routeDetailId,
-      biodegradable_sacks: parseInt(biodegradable || "0", 10),
-      non_biodegradable_sacks: parseInt(nonBiodegradable || "0", 10),
-      recyclable_sacks: parseInt(recyclable || "0", 10),
+      biodegradable_sacks: Number(biodegradable || 0),
+      non_biodegradable_sacks: Number(nonBiodegradable || 0),
+      recyclable_sacks: Number(recyclable || 0),
     };
 
     try {
       const res = await api.post("/waste-collections", payload);
-      const saved = res.data?.data ?? res.data;
-
-      if (typeof onSaved === "function") {
-        onSaved(saved);
-      }
-
+      onSaved?.(res.data.data);
       onClose();
     } catch (err) {
-      console.error("WasteInputModal.save error:", err?.response?.data || err?.message || err);
-      const msg =
-        err?.response?.data?.message ||
-        "Failed to save collection. Please try again.";
-      Alert.alert("Error", msg);
+      console.log("❌ Save failed:", err.response?.data || err);
+      Alert.alert("Error", "Failed to save waste collection.");
     } finally {
       setSubmitting(false);
     }
@@ -129,8 +160,39 @@ export default function WasteInputModal({ visible, onClose, routeDetailId, onSav
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.subtitle}>Enter number of sacks collected (integers).</Text>
+          {/* Terminal Estimation */}
+          {loadingTerminal ? (
+            <ActivityIndicator size="small" />
+          ) : terminalInfo ? (
+            <View style={styles.estimateBox}>
+              <Text style={styles.estimateTitle}>Estimated Waste for Terminal</Text>
 
+              <Text style={styles.estimateItem}>
+                Biodegradable:{" "}
+                <Text style={styles.estimateValue}>
+                  {terminalInfo.estimated_biodegradable}
+                </Text>
+              </Text>
+
+              <Text style={styles.estimateItem}>
+                Non-biodegradable:{" "}
+                <Text style={styles.estimateValue}>
+                  {terminalInfo.estimated_non_biodegradable}
+                </Text>
+              </Text>
+
+              <Text style={styles.estimateItem}>
+                Recyclable:{" "}
+                <Text style={styles.estimateValue}>
+                  {terminalInfo.estimated_recyclable}
+                </Text>
+              </Text>
+            </View>
+          ) : (
+            <Text style={{ color: "red" }}>No terminal data loaded.</Text>
+          )}
+
+          {/* INPUTS */}
           <View style={styles.field}>
             <Text style={styles.label}>Biodegradable</Text>
             <TextInput
@@ -212,14 +274,19 @@ const styles = StyleSheet.create({
     padding: 18,
     elevation: 14,
   },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
+  header: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
   title: { fontSize: 16, fontWeight: "800", color: "#0f172a" },
-  subtitle: { color: "#6b7280", marginBottom: 12, fontSize: 13 },
+
+  estimateBox: {
+    backgroundColor: "#f1f5f9",
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  estimateTitle: { fontSize: 14, fontWeight: "700", marginBottom: 8, color: "#0f172a" },
+  estimateItem: { fontSize: 13, marginBottom: 4, color: "#475569" },
+  estimateValue: { fontWeight: "bold", color: "#0f172a" },
+
   field: { marginBottom: 10 },
   label: { fontSize: 13, color: "#374151", marginBottom: 6 },
   input: {
@@ -230,23 +297,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     backgroundColor: "#fff",
   },
-  totalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 6,
-    marginBottom: 12,
-  },
-  totalLabel: { fontSize: 14, color: "#374151", fontWeight: "600" },
-  totalValue: { fontSize: 16, fontWeight: "800", color: "#0f172a" },
+
+  totalRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
+  totalLabel: { color: "#374151", fontWeight: "600" },
+  totalValue: { color: "#0f172a", fontWeight: "800" },
+
   actions: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
-  btn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  cancelBtn: { backgroundColor: "#9ca3af", marginRight: 6 },
-  saveBtn: { backgroundColor: "#16a34a", marginLeft: 6 },
+  btn: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center" },
+  cancelBtn: { backgroundColor: "#9ca3af" },
+  saveBtn: { backgroundColor: "#16a34a" },
   btnText: { color: "#fff", fontWeight: "700" },
 });

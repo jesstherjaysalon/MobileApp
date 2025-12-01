@@ -13,9 +13,18 @@ import {
 import Icon from "react-native-vector-icons/MaterialIcons";
 import api from "../api";
 
-export default function WasteInputModal({ visible, onClose, reschedDetailId, onSaved }) {
+export default function WasteInputModal({
+  visible,
+  onClose,
+  reschedDetailId,
+  terminalId,
+  onSaved,
+}) {
   const scale = useRef(new Animated.Value(0.9)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+
+  const [terminalInfo, setTerminalInfo] = useState(null);
+  const [loadingTerminal, setLoadingTerminal] = useState(false);
 
   const [biodegradable, setBiodegradable] = useState("");
   const [nonBiodegradable, setNonBiodegradable] = useState("");
@@ -43,8 +52,52 @@ export default function WasteInputModal({ visible, onClose, reschedDetailId, onS
       setNonBiodegradable("");
       setRecyclable("");
       setSubmitting(false);
+      setTerminalInfo(null);
     }
   }, [visible]);
+
+  // Load terminal info (estimates)
+  useEffect(() => {
+    if (visible && terminalId) {
+      console.log("📌 [Resched] Fetching terminal info for ID:", terminalId);
+      loadTerminalInfo();
+    } else {
+      console.log("❗ [Resched] No terminalId received:", terminalId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, terminalId]);
+
+  const loadTerminalInfo = async () => {
+    try {
+      setLoadingTerminal(true);
+      const res = await api.get(`/garbage-terminals/${terminalId}`);
+
+      console.log("📌 [Resched] Terminal API Response:", res.data);
+
+      const t = res.data.data;
+      setTerminalInfo(t);
+
+      if (t) {
+        setBiodegradable(
+          t.estimated_biodegradable != null ? String(t.estimated_biodegradable) : ""
+        );
+        setNonBiodegradable(
+          t.estimated_non_biodegradable != null ? String(t.estimated_non_biodegradable) : ""
+        );
+        setRecyclable(
+          t.estimated_recyclable != null ? String(t.estimated_recyclable) : ""
+        );
+      }
+    } catch (err) {
+      console.error(
+        "[Resched] ❌ Failed to load terminal:",
+        err?.response?.data || err?.message || err
+      );
+      Alert.alert("Error", "Unable to load terminal information.");
+    } finally {
+      setLoadingTerminal(false);
+    }
+  };
 
   const total = useMemo(() => {
     const a = Number(biodegradable || 0);
@@ -105,7 +158,10 @@ export default function WasteInputModal({ visible, onClose, reschedDetailId, onS
 
       onClose();
     } catch (err) {
-      console.error("WasteInputModal.save error:", err?.response?.data || err?.message || err);
+      console.error(
+        "WasteInputModal.save error:",
+        err?.response?.data || err?.message || err
+      );
       const msg =
         err?.response?.data?.message ||
         "Failed to save collection. Please try again.";
@@ -127,6 +183,40 @@ export default function WasteInputModal({ visible, onClose, reschedDetailId, onS
               <Icon name="close" size={20} color="#374151" />
             </TouchableOpacity>
           </View>
+
+          {/* Estimated values for this rescheduled segment's terminal */}
+          {loadingTerminal ? (
+            <ActivityIndicator size="small" />
+          ) : terminalInfo ? (
+            <View style={styles.estimateBox}>
+              <Text style={styles.estimateTitle}>Estimated Waste for Terminal</Text>
+
+              <Text style={styles.estimateItem}>
+                Biodegradable:{" "}
+                <Text style={styles.estimateValue}>
+                  {terminalInfo.estimated_biodegradable}
+                </Text>
+              </Text>
+
+              <Text style={styles.estimateItem}>
+                Non-biodegradable:{" "}
+                <Text style={styles.estimateValue}>
+                  {terminalInfo.estimated_non_biodegradable}
+                </Text>
+              </Text>
+
+              <Text style={styles.estimateItem}>
+                Recyclable:{" "}
+                <Text style={styles.estimateValue}>
+                  {terminalInfo.estimated_recyclable}
+                </Text>
+              </Text>
+            </View>
+          ) : (
+            <Text style={{ color: "red", marginBottom: 8 }}>
+              No terminal estimate loaded.
+            </Text>
+          )}
 
           <Text style={styles.subtitle}>Enter number of sacks collected (integers).</Text>
 
@@ -219,6 +309,17 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 16, fontWeight: "800", color: "#0f172a" },
   subtitle: { color: "#6b7280", marginBottom: 12, fontSize: 13 },
+
+  estimateBox: {
+    backgroundColor: "#f1f5f9",
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  estimateTitle: { fontSize: 14, fontWeight: "700", marginBottom: 8, color: "#0f172a" },
+  estimateItem: { fontSize: 13, marginBottom: 4, color: "#475569" },
+  estimateValue: { fontWeight: "bold", color: "#0f172a" },
+
   field: { marginBottom: 10 },
   label: { fontSize: 13, color: "#374151", marginBottom: 6 },
   input: {
@@ -229,6 +330,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     backgroundColor: "#fff",
   },
+
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -238,6 +340,7 @@ const styles = StyleSheet.create({
   },
   totalLabel: { fontSize: 14, color: "#374151", fontWeight: "600" },
   totalValue: { fontSize: 16, fontWeight: "800", color: "#0f172a" },
+
   actions: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
   btn: {
     flex: 1,

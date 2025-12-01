@@ -33,12 +33,25 @@ export default function ReschedProgress({ route }) {
 
   const [wasteModalVisible, setWasteModalVisible] = useState(false);
   const [activeReschedDetailId, setActiveReschedDetailId] = useState(null);
+  const [wasteModalTerminalId, setWasteModalTerminalId] = useState(null);
 
   useEffect(() => {
     const fetchResched = async () => {
       try {
         const res = await api.get(`/reschedules/${rescheduleId}/details`);
         const segments = res.data?.rescheduleDetails || [];
+
+       
+        console.log(
+          "RESCHED SEGMENTS:",
+          segments.map((s, idx) => ({
+            idx,
+            id: s.id,
+            from_terminal_id: s.from_terminal_id,
+            to_terminal_id: s.to_terminal_id,
+          }))
+        );
+
         setReschedDetails(segments);
         setCurrentIndex(0);
         setSelectedIndex(null);
@@ -65,7 +78,7 @@ export default function ReschedProgress({ route }) {
   };
 
   const handleWasteSaved = async () => {
-    await handleSubmitWaste(); // reuse existing function
+    await handleSubmitWaste();
   };
 
   const handleSubmitWaste = async () => {
@@ -85,6 +98,7 @@ export default function ReschedProgress({ route }) {
       setReschedDetails(updated);
 
       setWasteModalVisible(false);
+      setWasteModalTerminalId(null);
 
       if (currentIndex + 1 < updated.length) {
         const nextSegment = updated[currentIndex + 1];
@@ -187,11 +201,15 @@ export default function ReschedProgress({ route }) {
         onMarkerPress={(segment, idx) => setSelectedIndex(idx)}
       />
 
-      {/* ✅ Connected Waste Input Modal */}
+      {/* Waste Input Modal for Reschedule */}
       <WasteInputModal
         visible={wasteModalVisible}
-        onClose={() => setWasteModalVisible(false)}
+        onClose={() => {
+          setWasteModalVisible(false);
+          setWasteModalTerminalId(null);
+        }}
         reschedDetailId={activeReschedDetailId}
+        terminalId={wasteModalTerminalId}
         onSaved={handleWasteSaved}
       />
 
@@ -259,6 +277,8 @@ export default function ReschedProgress({ route }) {
                       disabled={isDisabled}
                       onPress={() => {
                         setActiveReschedDetailId(currentSegment.id);
+                        // Use to_terminal_id from reschedDetails API
+                        setWasteModalTerminalId(currentSegment.to_terminal_id);
                         setWasteModalVisible(true);
                       }}
                       style={[
